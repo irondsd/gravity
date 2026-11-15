@@ -434,6 +434,8 @@ window.addEventListener("keydown", (e) => {
   if (e.code === "KeyR" && screen === "result") beginRun();
 });
 window.addEventListener("pointerdown", () => audio.unlock());
+// no sound from a tab that is not being looked at
+document.addEventListener("visibilitychange", () => audio.setBackground(document.hidden));
 // pause when the window loses focus mid-ride
 window.addEventListener("blur", () => {
   if (screen === "playing" && spec && game.mode === "play" && game.started && game.state.status === RUNNING) {

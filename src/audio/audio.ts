@@ -14,6 +14,7 @@ function clamp(v: number, lo: number, hi: number): number {
 export class GameAudio {
   ctx: BaseAudioContext | null = null;
   muted = false;
+  private background = false;
   /** 0..1 overall loudness. */
   volume = 1;
   /** Pain screams and bone cracks. */
@@ -42,12 +43,20 @@ export class GameAudio {
   /** Create the audio context. Browsers only allow this after a key press or click. */
   unlock(): void {
     if (this.ctx) {
-      if (this.ctx instanceof AudioContext && this.ctx.state === "suspended") void this.ctx.resume();
+      if (this.ctx instanceof AudioContext && this.ctx.state === "suspended" && !this.background) void this.ctx.resume();
       return;
     }
     const Ctor = window.AudioContext;
     if (!Ctor) return;
     this.attach(new Ctor());
+  }
+
+  /** Stop all sound output while the tab is in the background, and pick it up again afterwards. */
+  setBackground(hidden: boolean): void {
+    this.background = hidden;
+    if (!(this.ctx instanceof AudioContext)) return;
+    if (hidden) void this.ctx.suspend();
+    else void this.ctx.resume();
   }
 
   toggleMute(): void {
