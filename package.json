@@ -1,11 +1,11 @@
 {
   "name": "gravity",
-  "module": "server.ts",
   "type": "module",
   "private": true,
   "scripts": {
     "start": "bun server.ts",
     "dev": "bun --hot server.ts --dev",
+    "build": "bun build ./index.html --outdir=dist --minify",
     "test": "bun test",
     "typecheck": "bun check"
   },

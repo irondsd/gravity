@@ -86,6 +86,16 @@ bun check        # type check
 
 The tuning panel in dev mode exposes every bike parameter (suspension, engine, lean control, tires, crash thresholds) within safe ranges.
 
+### Deploying
+
+The game runs entirely in the browser, so it can be hosted as static files:
+
+```bash
+bun run build    # writes the site to dist/
+```
+
+Upload `dist/` to any static host. For Vercel, the included `vercel.json` does this automatically.
+
 ### Project layout
 
 | Path | What it holds |
