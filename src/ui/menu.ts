@@ -5,6 +5,7 @@ import { PLANETS } from "../app/planets";
 import { OPPONENTS } from "../app/race";
 import { cleanName, NAME_MAX, randomName, type Options, type SaveData } from "../app/save";
 import { formatTime } from "../app/format";
+import { isTouch } from "../game/input";
 import { themeById } from "../render/themes";
 
 /** What the menus need from the game. */
@@ -48,7 +49,9 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls = "", ...children
 }
 
 function button(label: string, hint: string, action: () => void, cls = ""): HTMLButtonElement {
-  const b = el("button", `item ${cls}`.trim(), el("span", "", label), hint ? el("span", "hint", hint) : null);
+  // a hint that only names a key is hidden on touch screens
+  const key = /^(Esc|Enter|R)$/.test(hint);
+  const b = el("button", `item ${cls}`.trim(), el("span", "", label), hint ? el("span", key ? "hint key" : "hint", hint) : null);
   b.type = "button";
   b.addEventListener("click", action);
   return b;
@@ -151,7 +154,7 @@ export class Menu {
     const { save } = this.host;
     const earned = Object.keys(save.achievements).length;
     const done = (id: string) => save.progress[id] ?? 0;
-    const list = el("div", "list");
+    const list = el("div", "list cols");
 
     // Continue: the next unfinished level of the mode last played (or of Standard)
     const std = ladderById("standard")!;
@@ -305,7 +308,7 @@ export class Menu {
     const record = el("p", "info");
     const update = () => {
       const w = worlds.find((p) => p.id === c.planet) ?? worlds[0]!;
-      worldBtn.replaceChildren(el("span", "", "World"), el("span", "hint", `${w.name} · ${w.g}× gravity  (Enter to change)`));
+      worldBtn.replaceChildren(el("span", "", "World"), el("span", "hint", `${w.name} · ${w.g}× gravity  (${isTouch() ? "tap" : "Enter"} to change)`));
       const best = save.records[customLevel(save.name, c).id];
       record.textContent = best !== undefined ? `Your best on this track: ${formatTime(best)}` : "You have not finished this track yet.";
       this.host.persist();
@@ -330,7 +333,7 @@ export class Menu {
     const play = button("Ride", "Enter", () => this.host.play(customLevel(save.name, c)), "primary");
     update();
     const note = el("p", "note", "Each track is checked by a solver before you ride. Very long or very hard tracks take a while to check, and a few cannot be proven passable; you will be told.");
-    const panel = el("div", "panel", el("h2", "", "Custom track"), el("p", "sub", "Build your own. ← → move a slider."), list, record, note, el("div", "list", play, button("Back", "Esc", back)));
+    const panel = el("div", "panel", el("h2", "", "Custom track"), el("p", "sub", isTouch() ? "Build your own." : "Build your own. ← → move a slider."), list, record, note, el("div", "list", play, button("Back", "Esc", back)));
     this.show(panel, back, play);
   }
 
@@ -419,7 +422,7 @@ export class Menu {
       "div",
       "panel",
       el("h2", "", "Options"),
-      el("p", "sub", "Saved on this computer only."),
+      el("p", "sub", "Saved on this device only."),
       el("div", "list", nameField),
       el("p", "note", "Your name is the seed for your tracks: the same name always gets the same levels. Change it and every level becomes a different track, with its own records. Your progress stays."),
       el(

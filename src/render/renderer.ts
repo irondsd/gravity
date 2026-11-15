@@ -110,6 +110,11 @@ export class Renderer {
   crashHint = "";
   /** Key reminders, bottom right. */
   keysLabel = "";
+  /** Played by touch: before a run starts, show which part of the screen does what. */
+  touch = false;
+  private zonesAlpha = 0;
+  /** Screen edges to keep clear of, in pixels (a phone's notch and home bar). */
+  safe = { l: 0, r: 0, b: 0 };
 
   constructor(
     private canvas: HTMLCanvasElement,
@@ -201,6 +206,10 @@ export class Renderer {
     ctx.restore();
 
     this.drawVignette();
+    // the touch zones show while a run waits for its first touch, and are gone once it is under way
+    const waiting = this.touch && !this.hudHidden && !this.busyText && game.mode === "play" && !game.started;
+    this.zonesAlpha = waiting ? Math.min(1, this.zonesAlpha + dt * 5) : Math.max(0, this.zonesAlpha - dt * 9);
+    if (this.zonesAlpha > 0) this.drawZones(this.zonesAlpha);
     this.drawHud(game);
   }
 
@@ -631,9 +640,91 @@ export class Renderer {
     }
   }
 
+  /** The four touch zones, laid out as the fingers find them: lean on top, brake and throttle below. */
+  private drawZones(a: number): void {
+    const ctx = this.ctx;
+    const { l, r, b } = this.safe;
+    const m = 8;
+    const x0 = l + m;
+    const x1 = this.w - r - m;
+    const y1 = this.h - b - m;
+    const cx = this.w / 2;
+    const cy = this.h / 2;
+    const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 260);
+    const zones = [
+      { x: x0, y: m, w: cx - m / 2 - x0, h: cy - m * 1.5, label: "LEAN BACK", sub: "", color: "242,233,228", glow: 0, icon: "back" },
+      { x: cx + m / 2, y: m, w: x1 - cx - m / 2, h: cy - m * 1.5, label: "LEAN FORWARD", sub: "", color: "242,233,228", glow: 0, icon: "fwd" },
+      { x: x0, y: cy + m / 2, w: cx - m / 2 - x0, h: y1 - cy - m / 2, label: "BRAKE", sub: "", color: "255,128,128", glow: 0.04, icon: "brake" },
+      { x: cx + m / 2, y: cy + m / 2, w: x1 - cx - m / 2, h: y1 - cy - m / 2, label: "GAS", sub: "hold to go", color: "255,209,102", glow: 0.07 + 0.1 * pulse, icon: "gas" },
+    ];
+    ctx.save();
+    ctx.globalAlpha = a;
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    for (const z of zones) {
+      ctx.beginPath();
+      ctx.roundRect(z.x, z.y, z.w, z.h, 16);
+      ctx.fillStyle = `rgba(${z.color},${0.06 + z.glow})`;
+      ctx.fill();
+      ctx.lineWidth = z.icon === "gas" ? 2 : 1.5;
+      ctx.strokeStyle = `rgba(${z.color},${z.icon === "gas" ? 0.55 + 0.4 * pulse : 0.38})`;
+      ctx.stroke();
+
+      const mx = z.x + z.w / 2;
+      const my = z.y + z.h / 2 + (z.sub ? -8 : 0);
+      ctx.fillStyle = ctx.strokeStyle = `rgba(${z.color},0.95)`;
+      ctx.lineWidth = 3;
+      const iy = my - 26;
+      ctx.beginPath();
+      if (z.icon === "gas") {
+        ctx.moveTo(mx - 9, iy - 12);
+        ctx.lineTo(mx + 12, iy);
+        ctx.lineTo(mx - 9, iy + 12);
+        ctx.closePath();
+        ctx.fill();
+      } else if (z.icon === "brake") {
+        ctx.roundRect(mx - 10, iy - 10, 20, 20, 3);
+        ctx.fill();
+      } else {
+        // a turning arrow: the way the bike tips
+        const dir = z.icon === "fwd" ? 1 : -1;
+        const from = -Math.PI / 2 - dir * 2.2;
+        const to = -Math.PI / 2 + dir * 0.9;
+        ctx.arc(mx, iy, 11, from, to, dir < 0);
+        ctx.stroke();
+        const ex = mx + 11 * Math.cos(to);
+        const ey = iy + 11 * Math.sin(to);
+        const heading = to + (dir * Math.PI) / 2;
+        ctx.beginPath();
+        ctx.moveTo(ex + 7 * Math.cos(heading), ey + 7 * Math.sin(heading));
+        ctx.lineTo(ex + 6 * Math.cos(heading + 2.2), ey + 6 * Math.sin(heading + 2.2));
+        ctx.lineTo(ex + 6 * Math.cos(heading - 2.2), ey + 6 * Math.sin(heading - 2.2));
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.font = "800 17px system-ui, sans-serif";
+      ctx.fillStyle = "rgba(0,0,0,0.45)";
+      ctx.fillText(z.label, mx + 1, my + 9);
+      ctx.fillStyle = `rgba(${z.color},1)`;
+      ctx.fillText(z.label, mx, my + 8);
+      if (z.sub) {
+        ctx.font = "500 13px ui-monospace, Menlo, monospace";
+        ctx.fillStyle = "rgba(0,0,0,0.45)";
+        ctx.fillText(z.sub, mx + 1, my + 31);
+        ctx.fillStyle = `rgba(${z.color},1)`;
+        ctx.fillText(z.sub, mx, my + 30);
+      }
+    }
+    ctx.restore();
+  }
+
   private drawHud(game: Game): void {
     if (this.hudHidden) return;
     const ctx = this.ctx;
+    const left = 20 + this.safe.l;
+    const low = this.h - 16 - this.safe.b;
     const s = game.state;
     const cfg = game.simCfg;
     const time = formatTime(s.status === 0 ? s.tick : s.endTick);
@@ -642,40 +733,40 @@ export class Renderer {
     ctx.textBaseline = "top";
     ctx.font = "600 28px ui-monospace, Menlo, monospace";
     ctx.textAlign = "left";
-    ctx.fillText(time, 20, 16);
+    ctx.fillText(time, left, 16);
     ctx.font = "500 15px ui-monospace, Menlo, monospace";
-    ctx.fillText(`${Math.round(Math.hypot(s.vx, s.vy) * 3.6)} km/h`, 20, 52);
+    ctx.fillText(`${Math.round(Math.hypot(s.vx, s.vy) * 3.6)} km/h`, left, 52);
     let y = 74;
     if (game.best) {
       ctx.globalAlpha = 0.7;
-      ctx.fillText(`best ${formatTime(game.best.ticks)}`, 20, y);
+      ctx.fillText(`best ${formatTime(game.best.ticks)}`, left, y);
       ctx.globalAlpha = 1;
       y += 22;
     }
     ctx.fillStyle = "#ffd166";
     if (game.mode === "replay") {
-      ctx.fillText(game.watchLabel, 20, y);
+      ctx.fillText(game.watchLabel, left, y);
       y += 22;
     }
     for (const line of this.hudLines) {
-      ctx.fillText(line, 20, y);
+      ctx.fillText(line, left, y);
       y += 22;
     }
     if (s.headDamage > 0 && s.status === 0) {
       const f = Math.min(1, s.headDamage / cfg.headDamageMax);
       ctx.fillStyle = "rgba(0,0,0,0.35)";
-      ctx.fillRect(20, y + 6, 120, 8);
+      ctx.fillRect(left, y + 6, 120, 8);
       ctx.fillStyle = "#ef4b4b";
-      ctx.fillRect(20, y + 6, 120 * f, 8);
+      ctx.fillRect(left, y + 6, 120 * f, 8);
     }
 
     ctx.globalAlpha = 0.55;
     ctx.fillStyle = C.text;
     ctx.font = "500 12px ui-monospace, Menlo, monospace";
     ctx.textBaseline = "bottom";
-    ctx.fillText(this.levelLabel, 20, this.h - 16);
+    ctx.fillText(this.levelLabel, left, low);
     ctx.textAlign = "right";
-    ctx.fillText(this.keysLabel, this.w - 20, this.h - 16);
+    ctx.fillText(this.keysLabel, this.w - 20 - this.safe.r, low);
     ctx.textAlign = "left";
     ctx.textBaseline = "top";
     ctx.globalAlpha = 1;
@@ -688,15 +779,17 @@ export class Renderer {
     } else if (game.mode === "replay") {
       // a replay speaks for itself
     } else if (!game.started) {
-      msg = "Press ↑ to go";
+      // by touch the zones say how to set off
+      msg = this.touch ? "" : "Press ↑ to go";
       sub = this.startHint;
     } else if (s.status === CRASHED) {
       msg = s.crashCause === CAUSE_NECK ? "Broken neck" : s.crashCause === CAUSE_CRUSHED ? "Crushed" : "Head impact";
       sub = this.crashHint;
     }
-    if (msg) {
+    if (msg || sub) {
       ctx.textAlign = "center";
-      ctx.font = "700 40px system-ui, sans-serif";
+      // big words shrink to fit a phone
+      ctx.font = `700 ${Math.round(Math.min(40, this.w / 16))}px system-ui, sans-serif`;
       ctx.fillStyle = "rgba(0,0,0,0.4)";
       ctx.fillText(msg, this.w / 2 + 2, this.h * 0.2 + 2);
       ctx.fillStyle = C.text;

@@ -8,7 +8,7 @@ import { RaceBuilder, racePlace, type RaceLevel } from "./app/race";
 import { hashText, loadSave, newSave, storeSave } from "./app/save";
 import { GameAudio } from "./audio/audio";
 import { Game } from "./game/game";
-import { Keyboard } from "./game/input";
+import { isTouch, Keyboard, TouchPad } from "./game/input";
 import { decodeReplay, encodeReplay, trackHash, verifyReplay, type Replay } from "./game/replay";
 import { generateTrack } from "./level/generator";
 import { LevelBuilder, type Level } from "./level/level";
@@ -33,6 +33,7 @@ const effects = new Effects();
 const audio = new GameAudio();
 const renderer = new Renderer(canvas, effects);
 const keyboard = new Keyboard(window);
+const pad = new TouchPad(canvas);
 const tracker = new RunTracker();
 
 // The trained AI rider (data/rider.json, made by `bun src/ai/train.ts`). It rides the standard bike.
@@ -49,6 +50,73 @@ let resultIn = -1;
 let pendingResult: (() => void) | null = null;
 /** Achievements earned during the current run, to list on the result screen. */
 let earnedThisRun: Achievement[] = [];
+/** When the rider last crashed, so a finger still mashing the screen does not skip the crash. */
+let crashedAt = 0;
+
+// ---- touch screens: wording, and buttons for what the keyboard does with R and Esc ----
+const root = document.documentElement;
+const coarse = window.matchMedia("(pointer: coarse)");
+root.classList.toggle("touch", coarse.matches);
+
+/** The on-screen reminders, worded for keys or for fingers. */
+function setHints(): void {
+  const touch = isTouch();
+  renderer.touch = touch;
+  const runs = (level as RaceLevel | null)?.runs;
+  const race = spec?.race ? `Beat ${runs?.length === 1 ? "the AI rider" : `all ${runs?.length ?? 0} AI riders`}. They start when you do.` : "";
+  renderer.startHint = race || (touch ? "" : "↑ throttle   ↓ brake   ← lean back   → lean forward");
+  renderer.crashHint = touch ? "Tap to try again" : "R, Space or Enter to try again";
+  renderer.keysLabel = touch ? "" : "R restart     Esc pause     M sound";
+}
+
+/** Keep the HUD out from under a phone's notch and home bar (the stylesheet names their sizes). */
+function readSafeArea(): void {
+  const css = getComputedStyle(root);
+  const px = (name: string) => parseFloat(css.getPropertyValue(name)) || 0;
+  renderer.safe = { l: px("--safe-l"), r: px("--safe-r"), b: px("--safe-b") };
+}
+readSafeArea();
+window.addEventListener("resize", readSafeArea);
+
+function setTouch(on: boolean): void {
+  if (on === isTouch()) return;
+  root.classList.toggle("touch", on);
+  setHints();
+}
+
+const ICONS = {
+  restart: '<path d="M4 4v6h6"/><path d="M5.5 15a8 8 0 1 0 1.2-8.3L4 10"/>',
+  pause: '<path d="M8 5v14M16 5v14"/>',
+  cancel: '<path d="M6 6l12 12M18 6L6 18"/>',
+};
+function padButton(name: keyof typeof ICONS, label: string, action: () => void): HTMLButtonElement {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = name;
+  b.setAttribute("aria-label", label);
+  b.innerHTML = `<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`;
+  b.addEventListener("click", () => {
+    b.blur();
+    action();
+  });
+  return b;
+}
+const padUi = document.createElement("div");
+padUi.id = "pad";
+padUi.append(
+  padButton("restart", "Restart", () => {
+    if (screen === "playing" && spec) beginRun();
+  }),
+  padButton("pause", "Pause", () => pause()),
+  padButton("cancel", "Cancel", () => {
+    if (screen === "loading") toMenu();
+  }),
+);
+const rotate = document.createElement("div");
+rotate.id = "rotate";
+rotate.innerHTML =
+  '<svg viewBox="0 0 64 64" width="72" height="72" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="30" width="48" height="26" rx="5"/><path d="M14 22a18 18 0 0 1 18-14"/><path d="M26 3l7 5-6 6"/></svg><p>Turn your phone sideways to ride</p>';
+document.body.append(padUi, rotate);
 
 function applyOptions(): void {
   const o = save.options;
@@ -114,8 +182,11 @@ const levelKey = (s: LevelSpec) => `gravity.level.v${PHYSICS_VERSION}.${s.id}`;
 
 function setScreen(next: Screen): void {
   screen = next;
+  root.dataset.screen = next;
   keyboard.enabled = next === "playing";
   keyboard.mask = 0;
+  pad.enabled = next === "playing";
+  pad.reset();
   renderer.hudHidden = next === "menu";
   renderer.focusX = next === "menu" ? 0.86 : 0.5;
   if (next !== "playing") audio.quiet();
@@ -216,10 +287,11 @@ function buildSlice(): void {
   let done: Level | null = null;
   while (!done && performance.now() - t0 < 12) done = builder instanceof RaceBuilder ? builder.run() : builder.run(2000);
   if (!done) {
+    const cancel = isTouch() ? "" : "      Esc to cancel";
     renderer.busyText =
       builder instanceof RaceBuilder
-        ? `finding a track the AI can finish…  try ${builder.attempt + 1}      Esc to cancel`
-        : `checking that it can be finished…  attempt ${builder.attempt + 1}, ${Math.round(builder.progress * 100)}% of the way      Esc to cancel`;
+        ? `finding a track the AI can finish…  try ${builder.attempt + 1}${cancel}`
+        : `checking that it can be finished…  attempt ${builder.attempt + 1}, ${Math.round(builder.progress * 100)}% of the way${cancel}`;
     return;
   }
   const wasRace = builder instanceof RaceBuilder;
@@ -240,11 +312,7 @@ function useLevel(l: Level): void {
   solution = l.solution ? { trackId: game.trackId, cfg, inputs: l.solution, ticks: l.solutionTicks, hash: 0 } : null;
   renderer.busyText = "";
   renderer.levelLabel = l.verified ? spec.title : `${spec.title} · could not be proven passable`;
-  renderer.startHint = spec.race
-    ? `Beat ${runs?.length === 1 ? "the AI rider" : `all ${runs?.length ?? 0} AI riders`}. They start when you do.`
-    : "↑ throttle   ↓ brake   ← lean back   → lean forward";
-  renderer.crashHint = "R, Space or Enter to try again";
-  renderer.keysLabel = "R restart     Esc pause     M sound";
+  setHints();
   effects.clear();
   planAhead(spec);
   beginRun();
@@ -270,6 +338,7 @@ game.onTick = (s) => {
 
 function onCrash(): void {
   if (!spec) return;
+  crashedAt = performance.now();
   save.stats.crashes++;
   save.stats.streak = 0;
   save.fails[spec.id] = (save.fails[spec.id] ?? 0) + 1;
@@ -362,7 +431,7 @@ const host: MenuHost = {
     menu.hide();
     resultIn = -1;
     const label = what === "best" ? "YOUR BEST RUN" : what === "last" ? "REPLAY" : spec.race ? "FASTEST AI RIDER" : "A WAY THROUGH (solver, with rewinds)";
-    game.watch(r, `${label}      R to ride`);
+    game.watch(r, `${label}      ${isTouch() ? "tap" : "R"} to ride`);
     setScreen("playing");
   },
   available(what) {
@@ -418,31 +487,55 @@ keyboard.onKey = (code) => {
   else if (code === "KeyM") {
     save.options.sound = !save.options.sound;
     host.persist();
-  } else if (code === "Escape" || code === "KeyP") {
-    if (game.mode === "replay") beginRun();
-    else if (spec) {
-      setScreen("paused");
-      menu.showPause(spec);
-    }
-  }
+  } else if (code === "Escape" || code === "KeyP") pause();
 };
-window.addEventListener("keydown", (e) => {
-  // Browsers only allow sound after a key press or click.
-  audio.unlock();
-  if (e.code === "Escape" && screen === "loading") toMenu();
-  // on the result screen R retries without reaching for the mouse
-  if (e.code === "KeyR" && screen === "result") beginRun();
-});
-window.addEventListener("pointerdown", () => audio.unlock());
-// no sound from a tab that is not being looked at
-document.addEventListener("visibilitychange", () => audio.setBackground(document.hidden));
-// pause when the window loses focus mid-ride
-window.addEventListener("blur", () => {
+/** Esc, or the pause button: stop the ride, or leave a replay. */
+function pause(): void {
+  if (screen !== "playing") return;
+  if (game.mode === "replay") beginRun();
+  else if (spec) {
+    setScreen("paused");
+    menu.showPause(spec);
+  }
+}
+/** Pause a ride that is under way, for when the player cannot be steering it. */
+function pauseIfRiding(): void {
   if (screen === "playing" && spec && game.mode === "play" && game.started && game.state.status === RUNNING) {
     setScreen("paused");
     menu.showPause(spec);
   }
+}
+pad.onDown = () => {
+  // a tap leaves a replay, or tries again after a crash; that finger does not also steer
+  if (game.mode === "replay" || (game.state.status === CRASHED && performance.now() - crashedAt > 350)) {
+    beginRun();
+    return true;
+  }
+  return false;
+};
+window.addEventListener("keydown", (e) => {
+  // Browsers only allow sound after a key press or click.
+  audio.unlock();
+  // a keyboard on a touch-screen laptop: back to key hints
+  if (!coarse.matches) setTouch(false);
+  if (e.code === "Escape" && screen === "loading") toMenu();
+  // on the result screen R retries without reaching for the mouse
+  if (e.code === "KeyR" && screen === "result") beginRun();
 });
+window.addEventListener("pointerdown", (e) => {
+  if (e.pointerType === "touch") setTouch(true);
+  audio.unlock();
+});
+// for a finger it is lifting, not touching, that counts as the gesture that allows sound
+window.addEventListener("pointerup", () => audio.unlock());
+// the game is ridden sideways; a phone turned upright mid-ride waits
+window.matchMedia("(orientation: portrait)").addEventListener("change", (e) => {
+  if (e.matches && isTouch()) pauseIfRiding();
+});
+// no sound from a tab that is not being looked at
+document.addEventListener("visibilitychange", () => audio.setBackground(document.hidden));
+// pause when the window loses focus mid-ride
+window.addEventListener("blur", pauseIfRiding);
 
 // ---- dev mode: the tuning panel ----
 if (DEV) {
@@ -475,7 +568,7 @@ function frame(now: number): void {
   if (screen !== "menu") buildAhead();
 
   const live = screen === "playing" || screen === "result" || screen === "menu";
-  const alpha = live ? game.update(dt, screen === "playing" ? keyboard.mask : 0) : 1;
+  const alpha = live ? game.update(dt, screen === "playing" ? keyboard.mask | pad.mask : 0) : 1;
   // the demo ride behind the menu loops
   if (screen === "menu" && game.mode !== "replay" && rider) startDemo();
 

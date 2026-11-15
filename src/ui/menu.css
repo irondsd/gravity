@@ -1,11 +1,41 @@
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #15131f;
+  overscroll-behavior: none;
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+}
+:root {
+  /* a phone's notch and home bar; the canvas HUD reads these too */
+  --safe-l: env(safe-area-inset-left, 0px);
+  --safe-r: env(safe-area-inset-right, 0px);
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+}
+canvas {
+  display: block;
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  /* fingers ride the bike here: no scrolling, zooming or selecting */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
 #ui {
   position: fixed;
   inset: 0;
   display: none;
   align-items: center;
   justify-content: center;
-  padding: 24px;
+  padding: max(24px, var(--safe-t)) max(24px, var(--safe-r)) max(24px, var(--safe-b)) max(24px, var(--safe-l));
   box-sizing: border-box;
+  touch-action: manipulation;
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
   color: #f2e9e4;
   background: radial-gradient(ellipse at center, rgba(12, 10, 20, 0.5), rgba(8, 7, 14, 0.82));
@@ -107,8 +137,10 @@
   color: rgba(242, 233, 228, 0.55);
   text-align: right;
 }
-.item:hover {
-  background: rgba(242, 233, 228, 0.1);
+@media (hover: hover) {
+  .item:hover {
+    background: rgba(242, 233, 228, 0.1);
+  }
 }
 .item:focus-visible,
 .tile:focus-visible,
@@ -370,5 +402,130 @@
   }
   .field label {
     flex-basis: 110px;
+  }
+}
+
+/* ---- touch screens ---- */
+.touch .hint.key {
+  display: none;
+}
+.touch body {
+  user-select: none;
+  -webkit-user-select: none;
+}
+.touch .tile {
+  min-height: 40px;
+}
+.touch #toasts {
+  top: calc(64px + var(--safe-t));
+  right: calc(12px + var(--safe-r));
+}
+/* stand-ins for R and Esc while riding */
+#pad {
+  position: fixed;
+  top: calc(10px + var(--safe-t));
+  right: calc(12px + var(--safe-r));
+  display: none;
+  gap: 10px;
+  z-index: 5;
+}
+.touch[data-screen="playing"] #pad,
+.touch[data-screen="loading"] #pad {
+  display: flex;
+}
+#pad button {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  color: #f2e9e4;
+  background: rgba(21, 19, 31, 0.55);
+  border: 1px solid rgba(242, 233, 228, 0.28);
+  border-radius: 50%;
+  touch-action: manipulation;
+  cursor: pointer;
+}
+#pad button:active {
+  background: rgba(255, 209, 102, 0.3);
+}
+#pad .cancel,
+[data-screen="loading"] #pad .restart,
+[data-screen="loading"] #pad .pause {
+  display: none;
+}
+[data-screen="loading"] #pad .cancel {
+  display: grid;
+}
+/* the ride needs a wide screen */
+#rotate {
+  position: fixed;
+  inset: 0;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 24px;
+  font: 600 18px system-ui, -apple-system, "Segoe UI", sans-serif;
+  text-align: center;
+  color: #f2e9e4;
+  background: rgba(12, 10, 20, 0.92);
+  z-index: 40;
+}
+#rotate svg {
+  color: #ffd166;
+}
+#rotate p {
+  margin: 0;
+}
+@media (orientation: portrait) and (max-width: 600px) {
+  .touch[data-screen="playing"] #rotate,
+  .touch[data-screen="loading"] #rotate {
+    display: flex;
+  }
+}
+/* a phone on its side: little height, so everything tightens up */
+@media (max-height: 480px) {
+  #ui {
+    padding: max(10px, var(--safe-t)) max(14px, var(--safe-r)) max(10px, var(--safe-b)) max(14px, var(--safe-l));
+  }
+  .panel {
+    padding: 16px 18px 14px;
+  }
+  .panel:has(.cols) {
+    width: min(700px, 100%);
+  }
+  .list.cols {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+  .logo {
+    font-size: 36px;
+  }
+  .tagline {
+    margin: 4px 0 12px;
+  }
+  .panel h2 {
+    font-size: 22px;
+  }
+  .panel .sub {
+    margin-bottom: 10px;
+  }
+  .item .hint {
+    font-size: 12px;
+  }
+  .card {
+    min-height: 0;
+  }
+  .card .swatch {
+    height: 22px;
+  }
+  .bigtime {
+    margin: 0;
+    font-size: 34px;
+  }
+  .back {
+    margin-top: 10px;
   }
 }
