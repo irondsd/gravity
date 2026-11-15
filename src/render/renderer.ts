@@ -5,10 +5,8 @@ import {
   CAUSE_CRUSHED,
   CAUSE_NECK,
   CRASHED,
-  FINISHED,
   heightAt,
   segmentIndex,
-  TICK_RATE,
   type BikeConfig,
   type SimState,
   type Track,
@@ -17,23 +15,14 @@ import {
 import type { Game } from "../game/game";
 import * as RD from "../game/ragdoll";
 import { J_ELBOW, J_FOOT, J_HAND, J_HEAD, J_HIP, J_KNEE, J_SHOULDER, JOINTS, riderPose } from "../game/rider";
+import { formatTime } from "../app/format";
 import type { Effects } from "./effects";
+import { THEMES, type Theme } from "./themes";
 
 const DEPTH_X = 0.28; // fake-3D: the track is a strip with this visual depth
 const DEPTH_Y = 0.36;
 
 const C = {
-  skyTop: "#141a33",
-  skyMid: "#4a3a6a",
-  skyBottom: "#f0a878",
-  hillFar: "#6f5a86",
-  hillMid: "#463f68",
-  hillNear: "#2b2947",
-  groundTop: "#3a3452",
-  groundBottom: "#13111c",
-  strip: "#8f88ab",
-  stripFar: "#6f6890",
-  stripEdge: "#f2e9e4",
   tire: "#101017",
   rim: "#c9ccd6",
   frame: "#ef4b4b",
@@ -91,12 +80,6 @@ function fillView(v: View, prev: SimState, cur: SimState, alpha: number): void {
   lerpWheel(v.front, prev.front, cur.front, alpha);
 }
 
-function formatTime(ticks: number): string {
-  const t = ticks / TICK_RATE;
-  const min = Math.floor(t / 60);
-  return `${min}:${(t - min * 60).toFixed(2).padStart(5, "0")}`;
-}
-
 export class Renderer {
   private ctx: CanvasRenderingContext2D;
   private camX = 0;
@@ -109,11 +92,24 @@ export class Renderer {
   private stars: { x: number; y: number; r: number; a: number }[] = [];
   private w = 0;
   private h = 0;
-  soundOn = true;
+  /** The world's look; swap it when the level's planet changes. */
+  theme: Theme = THEMES.earth!;
+  /** Camera shake strength, 0 to switch it off. */
+  shakeScale = 1;
+  /** Extra lines under the clock (race position and the like). */
+  hudLines: string[] = [];
+  /** Hide the clock and hints, for when a menu covers the game. */
+  hudHidden = false;
+  /** Where across the screen the bike sits, 0..1 (off-center when a menu covers the middle). */
+  focusX = 0.5;
   levelLabel = "";
   /** Shown in the middle of the screen while a level is being built. */
   busyText = "";
-  hasSolution = false;
+  /** Shown under "Press ↑ to go" and under the crash message. */
+  startHint = "";
+  crashHint = "";
+  /** Key reminders, bottom right. */
+  keysLabel = "";
 
   constructor(
     private canvas: HTMLCanvasElement,
@@ -164,22 +160,24 @@ export class Renderer {
       this.zoomK += (zk - this.zoomK) * (1 - Math.exp(-dt * 1.5));
     }
     const zoom = Math.min(this.w / 19, this.h / 9.5) * this.zoomK;
-    const shake = this.fx.shake;
+    const shake = this.fx.shake * this.shakeScale;
     const camX = this.camX + (Math.random() - 0.5) * shake;
     const camY = this.camY + (Math.random() - 0.5) * shake;
 
     this.drawSky();
-    this.drawHills(0.05, 0.47, C.hillFar, 0.8, 0);
-    this.drawHills(0.11, 0.55, C.hillMid, 1.2, 2.1);
-    this.drawHills(0.2, 0.64, C.hillNear, 1.8, 4.4);
+    const T = this.theme;
+    this.drawHills(0.05, 0.47, T.hillFar, 0.8, 0);
+    this.drawHills(0.11, 0.55, T.hillMid, 1.2, 2.1);
+    this.drawHills(0.2, 0.64, T.hillNear, 1.8, 4.4);
 
     ctx.save();
-    ctx.translate(this.w / 2, this.h * 0.58);
+    ctx.translate(this.w * this.focusX, this.h * 0.58);
     ctx.scale(zoom, -zoom);
     ctx.translate(-camX, -camY);
-    const halfW = this.w / 2 / zoom + 1;
+    const leftW = (this.w * this.focusX) / zoom + 1;
+    const rightW = (this.w * (1 - this.focusX)) / zoom + 1;
     const bottom = camY - (this.h * 0.42) / zoom - 1;
-    this.drawTrack(track, camX - halfW, camX + halfW, bottom, camY);
+    this.drawTrack(track, camX - leftW, camX + rightW, bottom, camY);
     this.fx.drawBack(ctx);
 
     if (game.ghost && game.ghostPrev && game.best && game.started) {
@@ -188,6 +186,14 @@ export class Renderer {
       this.drawBike(this.ghostView, game.best.cfg, true);
       ctx.globalAlpha = 1;
     }
+    // the rest of a watched pack: half-transparent, the main rider drawn solid on top
+    for (const p of game.pack) {
+      if (p.state.x < camX - leftW - 3 || p.state.x > camX + rightW + 3) continue;
+      fillView(this.ghostView, p.prev, p.state, alpha);
+      ctx.globalAlpha = p.state.status === CRASHED ? 0.25 : 0.5;
+      this.drawBike(this.ghostView, p.replay.cfg, true);
+    }
+    ctx.globalAlpha = 1;
     this.drawShadow(track, v, cfg);
     this.drawBike(v, cfg, game.ragdoll === null);
     if (game.ragdoll) this.drawRagdoll(game.ragdoll, alpha, cfg);
@@ -200,35 +206,91 @@ export class Renderer {
 
   private drawSky(): void {
     const ctx = this.ctx;
+    const T = this.theme;
     const g = ctx.createLinearGradient(0, 0, 0, this.h * 0.75);
-    g.addColorStop(0, C.skyTop);
-    g.addColorStop(0.55, C.skyMid);
-    g.addColorStop(1, C.skyBottom);
+    g.addColorStop(0, T.skyTop);
+    g.addColorStop(0.55, T.skyMid);
+    g.addColorStop(1, T.skyBottom);
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, this.w, this.h);
 
     ctx.fillStyle = "#fff";
     for (const s of this.stars) {
-      ctx.globalAlpha = s.a * (1 - s.y * 1.8);
+      const fade = T.airless ? 1 : 1 - s.y * 1.8;
+      ctx.globalAlpha = Math.max(0, Math.min(1, s.a * fade * T.stars));
       ctx.beginPath();
-      ctx.arc(s.x * this.w, s.y * this.h, s.r, 0, Math.PI * 2);
+      ctx.arc(s.x * this.w, s.y * this.h * (T.airless ? 1.3 : 1), s.r, 0, Math.PI * 2);
       ctx.fill();
     }
     ctx.globalAlpha = 1;
 
-    // low sun with a wide glow
-    const sx = this.w * 0.7;
-    const sy = this.h * 0.52 - this.camY * 0.3;
-    const glow = ctx.createRadialGradient(sx, sy, 0, sx, sy, this.h * 0.5);
-    glow.addColorStop(0, "rgba(255,225,180,0.75)");
-    glow.addColorStop(0.2, "rgba(255,190,140,0.35)");
-    glow.addColorStop(1, "rgba(255,170,120,0)");
+    // the sun and its glow
+    const sun = T.sun;
+    const sx = this.w * sun.x;
+    const sy = this.h * sun.y - this.camY * 0.3;
+    const glow = ctx.createRadialGradient(sx, sy, 0, sx, sy, this.h * sun.glowSize);
+    glow.addColorStop(0, `rgba(${sun.glow},0.75)`);
+    glow.addColorStop(0.2, `rgba(${sun.glow},0.32)`);
+    glow.addColorStop(1, `rgba(${sun.glow},0)`);
     ctx.fillStyle = glow;
     ctx.fillRect(0, 0, this.w, this.h);
-    ctx.fillStyle = "#ffe9c4";
+    ctx.fillStyle = sun.color;
     ctx.beginPath();
-    ctx.arc(sx, sy, this.h * 0.045, 0, Math.PI * 2);
+    ctx.arc(sx, sy, this.h * sun.r, 0, Math.PI * 2);
     ctx.fill();
+
+    const body = T.body;
+    if (!body) return;
+    const bx = this.w * body.x;
+    const by = this.h * body.y - this.camY * 0.15;
+    const br = this.h * body.r;
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(bx, by, br, 0, Math.PI * 2);
+    if (body.kind === "earth") {
+      ctx.clip();
+      ctx.fillStyle = "#2f6fc4";
+      ctx.fillRect(bx - br, by - br, br * 2, br * 2);
+      ctx.fillStyle = "#4f9a5a";
+      for (const [dx, dy, r] of [[-0.35, -0.2, 0.42], [0.3, 0.35, 0.36], [0.45, -0.45, 0.22]] as const) {
+        ctx.beginPath();
+        ctx.ellipse(bx + dx * br, by + dy * br, r * br, r * br * 0.7, 0.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.fillStyle = "rgba(255,255,255,0.75)";
+      for (const [dx, dy, r] of [[-0.1, 0.5, 0.4], [0.2, -0.15, 0.3], [-0.5, -0.55, 0.3]] as const) {
+        ctx.beginPath();
+        ctx.ellipse(bx + dx * br, by + dy * br, r * br, r * br * 0.25, -0.3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      // night side
+      ctx.fillStyle = "rgba(0,0,8,0.82)";
+      ctx.beginPath();
+      ctx.arc(bx - br * 0.55, by + br * 0.25, br * 1.15, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (body.kind === "moonlet") {
+      ctx.fillStyle = "#e8d6c0";
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(bx + this.w * 0.12, by + this.h * 0.07, br * 0.6, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      ctx.fillStyle = "#7fae6a";
+      ctx.fill();
+      ctx.clip();
+      ctx.fillStyle = "rgba(0,10,5,0.6)";
+      ctx.beginPath();
+      ctx.arc(bx - br * 0.5, by - br * 0.2, br * 1.1, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+      ctx.save();
+      ctx.strokeStyle = "rgba(190,230,160,0.55)";
+      ctx.lineWidth = Math.max(1.5, br * 0.12);
+      ctx.beginPath();
+      ctx.ellipse(bx, by, br * 1.9, br * 0.45, -0.35, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.restore();
   }
 
   private drawHills(parallax: number, base: number, color: string, freq: number, phase: number): void {
@@ -240,7 +302,7 @@ export class Renderer {
     ctx.moveTo(0, this.h);
     for (let px = 0; px <= this.w + 12; px += 12) {
       const u = ((px + off) / 300) * freq + phase;
-      const y = y0 - (Math.sin(u) * 38 + Math.sin(u * 2.3 + 1.7) * 18 + Math.sin(u * 0.41 + 4) * 55 + Math.sin(u * 5.1) * 5);
+      const y = y0 - (Math.sin(u) * 38 + Math.sin(u * 2.3 + 1.7) * 18 + Math.sin(u * 0.41 + 4) * 55 + Math.sin(u * 5.1) * 5) * this.theme.hillScale;
       ctx.lineTo(px, y);
     }
     ctx.lineTo(this.w, this.h);
@@ -249,6 +311,7 @@ export class Renderer {
 
   private drawTrack(track: Track, left: number, right: number, bottom: number, camY: number): void {
     const ctx = this.ctx;
+    const T = this.theme;
     const xs = track.xs;
     const ys = track.ys;
     const a = Math.max(0, segmentIndex(track, left - DEPTH_X) - 1);
@@ -264,11 +327,11 @@ export class Renderer {
     path(-fx, -fy);
     for (let i = b; i >= a; i--) ctx.lineTo(xs[i]! + fx, ys[i]! + fy);
     ctx.closePath();
-    ctx.fillStyle = C.strip;
+    ctx.fillStyle = T.strip;
     ctx.fill();
     ctx.beginPath();
     path(-fx, -fy);
-    ctx.strokeStyle = C.stripFar;
+    ctx.strokeStyle = T.stripFar;
     ctx.lineWidth = 0.04;
     ctx.lineJoin = "round";
     ctx.stroke();
@@ -280,8 +343,8 @@ export class Renderer {
     ctx.lineTo(xs[b]! + fx, bottom);
     ctx.closePath();
     const g = ctx.createLinearGradient(0, camY + 2, 0, camY - 7);
-    g.addColorStop(0, C.groundTop);
-    g.addColorStop(1, C.groundBottom);
+    g.addColorStop(0, T.groundTop);
+    g.addColorStop(1, T.groundBottom);
     ctx.fillStyle = g;
     ctx.fill();
 
@@ -301,7 +364,7 @@ export class Renderer {
     // front edge highlight
     ctx.beginPath();
     path(fx, fy);
-    ctx.strokeStyle = C.stripEdge;
+    ctx.strokeStyle = T.stripEdge;
     ctx.lineWidth = 0.05;
     ctx.stroke();
 
@@ -311,8 +374,9 @@ export class Renderer {
 
   private drawStartFlag(track: Track, x: number): void {
     const ctx = this.ctx;
+    const T = this.theme;
     const y = heightAt(track, x) + DEPTH_Y / 2;
-    ctx.strokeStyle = C.stripEdge;
+    ctx.strokeStyle = T.stripEdge;
     ctx.lineWidth = 0.06;
     ctx.beginPath();
     ctx.moveTo(x, y);
@@ -328,8 +392,9 @@ export class Renderer {
 
   private drawFinishFlag(track: Track, x: number): void {
     const ctx = this.ctx;
+    const T = this.theme;
     const y = heightAt(track, x) + DEPTH_Y / 2;
-    ctx.strokeStyle = C.stripEdge;
+    ctx.strokeStyle = T.stripEdge;
     ctx.lineWidth = 0.07;
     ctx.beginPath();
     ctx.moveTo(x, y);
@@ -567,6 +632,7 @@ export class Renderer {
   }
 
   private drawHud(game: Game): void {
+    if (this.hudHidden) return;
     const ctx = this.ctx;
     const s = game.state;
     const cfg = game.simCfg;
@@ -579,54 +645,54 @@ export class Renderer {
     ctx.fillText(time, 20, 16);
     ctx.font = "500 15px ui-monospace, Menlo, monospace";
     ctx.fillText(`${Math.round(Math.hypot(s.vx, s.vy) * 3.6)} km/h`, 20, 52);
+    let y = 74;
     if (game.best) {
       ctx.globalAlpha = 0.7;
-      ctx.fillText(`best ${formatTime(game.best.ticks)}`, 20, 74);
+      ctx.fillText(`best ${formatTime(game.best.ticks)}`, 20, y);
       ctx.globalAlpha = 1;
+      y += 22;
     }
+    ctx.fillStyle = "#ffd166";
     if (game.mode === "replay") {
-      ctx.fillStyle = "#ffd166";
-      ctx.fillText("REPLAY", 20, 96);
+      ctx.fillText(game.watchLabel, 20, y);
+      y += 22;
     }
+    for (const line of this.hudLines) {
+      ctx.fillText(line, 20, y);
+      y += 22;
+    }
+    if (s.headDamage > 0 && s.status === 0) {
+      const f = Math.min(1, s.headDamage / cfg.headDamageMax);
+      ctx.fillStyle = "rgba(0,0,0,0.35)";
+      ctx.fillRect(20, y + 6, 120, 8);
+      ctx.fillStyle = "#ef4b4b";
+      ctx.fillRect(20, y + 6, 120 * f, 8);
+    }
+
     ctx.globalAlpha = 0.55;
     ctx.fillStyle = C.text;
     ctx.font = "500 12px ui-monospace, Menlo, monospace";
     ctx.textBaseline = "bottom";
-    ctx.fillText(`${this.levelLabel}     N  next level     M  sound ${this.soundOn ? "on" : "off"}`, 20, this.h - 16);
+    ctx.fillText(this.levelLabel, 20, this.h - 16);
+    ctx.textAlign = "right";
+    ctx.fillText(this.keysLabel, this.w - 20, this.h - 16);
+    ctx.textAlign = "left";
     ctx.textBaseline = "top";
     ctx.globalAlpha = 1;
-    ctx.font = "500 15px ui-monospace, Menlo, monospace";
-
-    if (s.headDamage > 0 && s.status === 0) {
-      const f = Math.min(1, s.headDamage / cfg.headDamageMax);
-      ctx.fillStyle = "rgba(0,0,0,0.35)";
-      ctx.fillRect(20, 120, 120, 8);
-      ctx.fillStyle = "#ef4b4b";
-      ctx.fillRect(20, 120, 120 * f, 8);
-    }
 
     let msg = "";
     let sub = "";
     if (this.busyText) {
       msg = "Building level";
       sub = this.busyText;
+    } else if (game.mode === "replay") {
+      // a replay speaks for itself
     } else if (!game.started) {
       msg = "Press ↑ to go";
-      sub = "↑ throttle   ↓ brake   ← lean back   → lean forward   R restart";
-      if (game.best) sub += "   P watch best";
-      if (this.hasSolution) sub += "   H watch a solution";
+      sub = this.startHint;
     } else if (s.status === CRASHED) {
       msg = s.crashCause === CAUSE_NECK ? "Broken neck" : s.crashCause === CAUSE_CRUSHED ? "Crushed" : "Head impact";
-    } else if (s.status === FINISHED && game.mode === "play") {
-      msg = `Finished  ${time}`;
-      const r = game.result;
-      if (r && r.previousBest !== null) {
-        const d = (r.ticks - r.previousBest) / TICK_RATE;
-        sub = r.newBest ? `New best!  ${d.toFixed(2)} s` : `+${d.toFixed(2)} s off your best`;
-      } else if (r?.newBest) {
-        sub = "First time on the board";
-      }
-      sub += (sub ? "   ·   " : "") + "R ride again   L watch this run   P watch best";
+      sub = this.crashHint;
     }
     if (msg) {
       ctx.textAlign = "center";

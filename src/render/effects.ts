@@ -36,7 +36,17 @@ export class Effects {
   /** Red screen flash on a crash, 1 fading to 0. */
   flash = 0;
   private sinceCrash = 0;
+  /** Blood and the red flash; off for the squeamish. */
+  gore = true;
+  dustColor = "#cdbfd0";
+  dirtColor = "#5a4f6e";
   private emitDebt = 0;
+
+  /** Remove any blood already on screen (when the option is switched off mid-game). */
+  clearBlood(): void {
+    this.items = this.items.filter((p) => p.kind !== BLOOD && p.kind !== STAIN);
+    this.flash = 0;
+  }
 
   clear(): void {
     this.items.length = 0;
@@ -57,6 +67,7 @@ export class Effects {
   }
 
   private blood(x: number, y: number, vx: number, vy: number, n: number, speed: number): void {
+    if (!this.gore) return;
     for (let i = 0; i < n; i++) {
       const color = BLOOD_COLORS[(Math.random() * BLOOD_COLORS.length) | 0]!;
       this.add(BLOOD, x, y, vx + rand(-speed, speed), vy + rand(-0.3 * speed, speed), 4, rand(0.025, 0.06), color);
@@ -80,7 +91,7 @@ export class Effects {
       this.shake = Math.max(this.shake, 0.12);
     } else if (e.type === "crash") {
       this.shake = 0.35;
-      this.flash = 1;
+      this.flash = this.gore ? 1 : 0;
       this.sinceCrash = 0;
       const head = game.ragdoll;
       const hx = head ? head.x[R_HEAD]! : s.x;
@@ -112,7 +123,7 @@ export class Effects {
         const n = Math.floor(power * 70 * this.emitDebt + Math.random());
         const gy = heightAt(track, s.rear.x);
         for (let i = 0; i < n; i++) {
-          this.add(DIRT, s.rear.x - 0.1, gy + 0.03, s.vx * 0.35 - rand(1.5, 5) * power, rand(1, 4.5) * power, 1.2, rand(0.02, 0.045), "#5a4f6e");
+          this.add(DIRT, s.rear.x - 0.1, gy + 0.03, s.vx * 0.35 - rand(1.5, 5) * power, rand(1, 4.5) * power, 1.2, rand(0.02, 0.045), this.dirtColor);
         }
       }
       for (const wh of [s.rear, s.front]) {
@@ -193,7 +204,7 @@ export class Effects {
         ctx.fill();
       } else if (p.kind === DUST) {
         ctx.globalAlpha = 0.28 * (1 - p.age / p.life);
-        ctx.fillStyle = "#cdbfd0";
+        ctx.fillStyle = this.dustColor;
         ctx.beginPath();
         ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
         ctx.fill();

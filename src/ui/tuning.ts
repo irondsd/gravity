@@ -117,7 +117,7 @@ export function createTuningPanel(
       },
     },
     "random",
-  ).name("Random seed  (N = next level)");
+  ).name("Random seed");
 
   const save = () => saveConfig(cfg);
 

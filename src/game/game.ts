@@ -41,6 +41,8 @@ export class Game {
 
   mode: "play" | "replay" = "play";
   private watching: Replay | null = null;
+  /** What is being watched, for the HUD ("REPLAY", "AI RIDER", ...). */
+  watchLabel = "REPLAY";
 
   /** Fastest finished run on this track, shown as a ghost. */
   best: Replay | null = null;
@@ -49,6 +51,16 @@ export class Game {
   result: RunResult | null = null;
   ghost: SimState | null = null;
   ghostPrev: SimState | null = null;
+  /** Other riders shown alongside a watched run (e.g. the rest of an AI pack). */
+  pack: { replay: Replay; state: SimState; prev: SimState }[] = [];
+  /** Opponents to race in play mode; they set off when the player does. */
+  rivals: Replay[] = [];
+  /** Restart by itself a moment after a crash. */
+  autoRestart = true;
+  /** Show the ghost of the best run. */
+  showGhost = true;
+  /** Called after every tick of a live (not replayed) run. */
+  onTick: (s: SimState) => void = () => {};
   onNewBest: (r: Replay) => void = () => {};
 
   trackId: number;
@@ -73,6 +85,7 @@ export class Game {
     this.trackId = trackHash(track);
     this.best = null;
     this.last = null;
+    this.rivals = [];
     this.restart();
   }
 
@@ -81,17 +94,26 @@ export class Game {
     this.mode = "play";
     this.watching = null;
     this.begin(this.cfg);
-    if (this.best && this.best.trackId === this.trackId) {
+    this.pack = this.rivals.map((r) => {
+      const state = createState(this.track, r.cfg);
+      return { replay: r, state, prev: cloneState(state) };
+    });
+    if (this.showGhost && this.best && this.best.trackId === this.trackId) {
       this.ghost = createState(this.track, this.best.cfg);
       this.ghostPrev = cloneState(this.ghost);
     }
   }
 
   /** Watch a recorded run. */
-  watch(replay: Replay): void {
+  watch(replay: Replay, label = "REPLAY", others: Replay[] = []): void {
+    this.watchLabel = label;
     this.mode = "replay";
     this.watching = replay;
     this.begin(replay.cfg);
+    this.pack = others.map((r) => {
+      const state = createState(this.track, r.cfg);
+      return { replay: r, state, prev: cloneState(state) };
+    });
     this.started = true;
   }
 
@@ -110,6 +132,7 @@ export class Game {
     this.ragdoll = null;
     this.ghost = null;
     this.ghostPrev = null;
+    this.pack = [];
     this.result = null;
     this.acc = 0;
     this.sinceEnd = 0;
@@ -133,10 +156,12 @@ export class Game {
       this.sinceEnd += dt;
       if (this.mode === "replay") {
         if (this.sinceEnd > REPLAY_END_DELAY) this.restart();
-      } else if (s.status === CRASHED && this.sinceEnd > CRASH_RESTART_DELAY) {
+      } else if (this.autoRestart && s.status === CRASHED && this.sinceEnd > CRASH_RESTART_DELAY) {
         this.restart();
       }
     }
+    // a watched run that ends without finishing or crashing (rider gave up or got stuck)
+    if (this.watching && s.status === RUNNING && s.tick > this.watching.inputs.length + 120) this.restart();
     return this.acc / TICK_DT;
   }
 
@@ -155,9 +180,15 @@ export class Game {
       tick(this.ghost, this.best.inputs[this.ghost.tick] ?? 0, this.track, this.best.cfg);
     }
 
+    for (const p of this.pack) {
+      copyState(p.prev, p.state);
+      tick(p.state, p.replay.inputs[p.state.tick] ?? 0, this.track, p.replay.cfg);
+    }
+
     if (wasRunning && s.status === CRASHED) this.ragdoll = spawnRagdoll(s, this.simCfg);
     if (this.ragdoll) stepRagdoll(this.ragdoll, this.track, this.simCfg.gravity);
 
+    if (wasRunning && this.mode === "play") this.onTick(s);
     if (wasRunning && s.status === FINISHED && this.mode === "play") this.onFinish();
   }
 

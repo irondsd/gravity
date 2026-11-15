@@ -11,6 +11,8 @@ export interface LevelParams {
   length: number;
   /** Which try this is, when earlier tries for the same seed were rejected as unpassable. */
   attempt?: number;
+  /** Multiplier on how wide jumps are: below 1 for heavy gravity (short jumps), above 1 for light. Default 1. */
+  gapScale?: number;
 }
 
 /** mulberry32: small, fast, well-distributed 32-bit PRNG. Returns values in [0, 1). */
@@ -27,6 +29,8 @@ export function makeRng(seed: number): () => number {
 
 type Net = "up" | "down" | "level";
 type Rnd = (lo: number, hi: number) => number;
+/** Set for the duration of one generateTrack call. */
+let gapScale = 1;
 
 interface Feature {
   name: string;
@@ -163,7 +167,7 @@ const FEATURES: Feature[] = [
     weight: (d) => (d < 0.12 ? 0 : 1 + 4 * d),
     build: (b, d, rnd) => {
       const h = rnd(0.8, 1.2 + 1.2 * d);
-      const width = rnd(3, 4 + 11 * d);
+      const width = rnd(3, 4 + 11 * d) * gapScale;
       const depth = rnd(1.5, 2.5 + 2 * d);
       // enough room to build the speed the jump needs, less generously as difficulty rises
       b.flat(width * rnd(mix(1.6, 0.7, d), 1.8));
@@ -241,6 +245,8 @@ const FEATURES: Feature[] = [
   },
 ];
 
+/** Tries at full difficulty before the generator starts easing off. */
+export const EASE_AFTER = 14;
 const MAX_DRIFT = 12; // meters above or below the start before the generator steers back
 const START_FLAT = 18;
 const END_FLAT = 30;
@@ -249,7 +255,10 @@ export function generateTrack(p: LevelParams): Track {
   // each attempt for a seed is its own independent random stream
   const rng = makeRng((p.seed ^ Math.imul(p.attempt ?? 0, 0x9e3779b9)) >>> 0);
   const rnd: Rnd = (lo, hi) => lo + (hi - lo) * rng();
-  const difficulty = Math.min(1, Math.max(0, p.difficulty));
+  // After many rejected tries the rating is eased a little per try, so a passable track always turns up.
+  const eased = 1 - 0.02 * Math.max(0, (p.attempt ?? 0) - (EASE_AFTER - 1));
+  const difficulty = Math.min(1, Math.max(0, p.difficulty)) * Math.max(0.5, eased);
+  gapScale = p.gapScale ?? 1;
   const b = new TrackBuilder();
   // smooth curves turn angular as difficulty rises
   b.sample = mix(0.5, 2.2, difficulty);

@@ -13,13 +13,15 @@ const KEYS: Record<string, number> = {
 
 export class Keyboard {
   mask = 0;
+  /** Off while a menu is open, so its keys are left alone. */
+  enabled = true;
   onRestart: () => void = () => {};
   /** Other single-press keys, by KeyboardEvent.code (e.g. "KeyP"). */
   onKey: (code: string) => void = () => {};
 
   constructor(target: Window) {
     target.addEventListener("keydown", (e) => {
-      if (e.target instanceof HTMLInputElement) return;
+      if (!this.enabled || e.target instanceof HTMLInputElement) return;
       const bit = KEYS[e.code];
       if (bit !== undefined) {
         this.mask |= bit;

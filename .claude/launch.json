@@ -4,8 +4,21 @@
     {
       "name": "gravity",
       "runtimeExecutable": "bun",
-      "runtimeArgs": ["--hot", "server.ts"],
+      "runtimeArgs": [
+        "--hot",
+        "server.ts",
+        "--dev"
+      ],
       "port": 3210
+    },
+    {
+      "name": "gravity-game",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": [
+        "server.ts",
+        "--no-open"
+      ],
+      "port": 3220
     }
   ]
 }

@@ -1,0 +1,63 @@
+training: 2326 weights, 192 rides x 8 levels per generation, 9 threads, 25 min
+gen 16  0.5min  difficulty 7  finishing 70%  progress 100%  score 3.03
+gen 31  1.0min  difficulty 22  finishing 71%  progress 88%  score 2.42
+gen 49  1.6min  difficulty 31  finishing 68%  progress 98%  score 2.36
+gen 64  2.1min  difficulty 46  finishing 69%  progress 84%  score 2.05
+gen 79  2.6min  difficulty 50  finishing 58%  progress 82%  score 2.05
+gen 94  3.1min  difficulty 53  finishing 51%  progress 76%  score 1.62
+gen 109  3.6min  difficulty 53  finishing 52%  progress 68%  score 1.53
+gen 125  4.1min  difficulty 53  finishing 54%  progress 79%  score 1.75
+gen 140  4.7min  difficulty 60  finishing 63%  progress 85%  score 1.72
+gen 154  5.2min  difficulty 66  finishing 56%  progress 91%  score 1.63
+gen 167  5.7min  difficulty 72  finishing 55%  progress 80%  score 1.68
+gen 180  6.2min  difficulty 78  finishing 67%  progress 96%  score 2.15
+gen 194  6.7min  difficulty 81  finishing 61%  progress 88%  score 1.76
+gen 207  7.2min  difficulty 82  finishing 58%  progress 91%  score 1.88
+gen 221  7.8min  difficulty 87  finishing 51%  progress 66%  score 1.45
+gen 235  8.3min  difficulty 87  finishing 48%  progress 74%  score 1.39
+gen 249  8.8min  difficulty 87  finishing 54%  progress 68%  score 1.97
+gen 264  9.4min  difficulty 87  finishing 49%  progress 74%  score 1.43
+gen 278  9.9min  difficulty 87  finishing 52%  progress 82%  score 1.72
+gen 292  10.4min  difficulty 87  finishing 46%  progress 63%  score 1.22
+gen 306  10.9min  difficulty 87  finishing 56%  progress 77%  score 1.61
+gen 320  11.5min  difficulty 87  finishing 46%  progress 67%  score 1.27
+gen 334  12.0min  difficulty 87  finishing 45%  progress 61%  score 1.73
+gen 347  12.5min  difficulty 87  finishing 49%  progress 76%  score 1.75
+gen 361  13.0min  difficulty 87  finishing 43%  progress 62%  score 1.43
+gen 375  13.6min  difficulty 87  finishing 40%  progress 52%  score 1.36
+gen 388  14.1min  difficulty 87  finishing 50%  progress 69%  score 1.47
+gen 402  14.6min  difficulty 87  finishing 53%  progress 60%  score 1.47
+gen 416  15.1min  difficulty 87  finishing 49%  progress 71%  score 1.57
+gen 430  15.7min  difficulty 88  finishing 46%  progress 56%  score 1.68
+gen 444  16.2min  difficulty 88  finishing 44%  progress 81%  score 1.53
+gen 458  16.7min  difficulty 88  finishing 46%  progress 87%  score 1.67
+gen 472  17.2min  difficulty 88  finishing 37%  progress 59%  score 1.29
+gen 486  17.7min  difficulty 88  finishing 50%  progress 70%  score 1.75
+gen 500  18.2min  difficulty 88  finishing 45%  progress 76%  score 1.25
+gen 514  18.8min  difficulty 88  finishing 38%  progress 79%  score 1.76
+gen 527  19.3min  difficulty 88  finishing 45%  progress 56%  score 1.52
+gen 541  19.8min  difficulty 88  finishing 47%  progress 74%  score 1.50
+gen 555  20.3min  difficulty 88  finishing 54%  progress 82%  score 1.49
+gen 569  20.8min  difficulty 88  finishing 45%  progress 62%  score 1.41
+gen 582  21.3min  difficulty 88  finishing 48%  progress 70%  score 1.58
+gen 596  21.9min  difficulty 88  finishing 53%  progress 91%  score 2.14
+gen 610  22.4min  difficulty 89  finishing 53%  progress 82%  score 1.35
+gen 624  22.9min  difficulty 89  finishing 44%  progress 85%  score 1.90
+gen 638  23.4min  difficulty 89  finishing 42%  progress 55%  score 1.26
+gen 652  23.9min  difficulty 89  finishing 50%  progress 78%  score 1.64
+gen 666  24.5min  difficulty 89  finishing 41%  progress 60%  score 1.14
+gen 680  25.0min  difficulty 89  finishing 42%  progress 63%  score 1.25
+
+saved data/rider.json after 680 generations. Held-out levels:
+difficulty  finished  avg progress  avg time when finished
+     0      6/6       100%         27.6s
+    10      5/6        95%         27.9s
+    20      6/6       100%         28.1s
+    30      5/6        90%         31.7s
+    40      6/6       100%         33.9s
+    50      4/6        94%         33.8s
+    60      4/6        80%         34.8s
+    70      3/6        88%         39.6s
+    80      1/6        60%         39.4s
+    90      2/6        79%         50.9s
+   100      0/6        30%         -

@@ -1,7 +1,7 @@
 // A playable level: a generated track that has been checked by the solver.
 // If a track cannot be finished (or is too easy for its rating), the next attempt for the
 // same seed is generated instead, so a seed + difficulty + length always names one verified level.
-import { defaultConfig, type Track } from "../sim";
+import { defaultConfig, type BikeConfig, type Track } from "../sim";
 import { generateTrack, type LevelParams } from "./generator";
 import { Solver, throttleOnlyFinishes, type SolveResult } from "./solver";
 
@@ -11,14 +11,15 @@ export interface Level {
   attempt: number;
   /** True if the solver finished it. False means no passable attempt was found in time. */
   verified: boolean;
-  /** The solver's winning run (inputs per tick, default bike config), if verified. */
+  /** The solver's winning run (inputs per tick, for the bike it was built with), if verified. */
   solution: Uint8Array | null;
   solutionTicks: number;
   /** Times the solver crashed or got stuck before finishing: the measured difficulty. */
   failures: number;
 }
 
-const MAX_ATTEMPTS = 14;
+// The first 14 tries are at the asked difficulty; after that each try is 2% easier (see generateTrack).
+const MAX_ATTEMPTS = 34;
 const SOLVE_BUDGET = 400000; // sim ticks per attempt
 /** Above this difficulty a level must not be finishable by just holding the throttle. */
 const THROTTLE_ONLY_LIMIT = 0.2;
@@ -31,7 +32,11 @@ export class LevelBuilder {
   private best: { attempt: number; progress: number } = { attempt: 0, progress: -1 };
   level: Level | null = null;
 
-  constructor(private params: LevelParams) {
+  constructor(
+    private params: LevelParams,
+    /** The bike the level must be passable with (other planets ride differently). */
+    private cfg: BikeConfig = defaultConfig,
+  ) {
     this.track = this.begin();
   }
 
@@ -51,10 +56,10 @@ export class LevelBuilder {
     if (this.level) return this.level;
     if (!this.solver) {
       // Too easy for its rating: skip without spending solver time.
-      if (this.params.difficulty > THROTTLE_ONLY_LIMIT && throttleOnlyFinishes(this.track, defaultConfig)) {
+      if (this.params.difficulty > THROTTLE_ONLY_LIMIT && throttleOnlyFinishes(this.track, this.cfg)) {
         return this.next(null);
       }
-      this.solver = new Solver(this.track, defaultConfig, SOLVE_BUDGET);
+      this.solver = new Solver(this.track, this.cfg, SOLVE_BUDGET);
     }
     const r = this.solver.run(work);
     if (!r) return null;
@@ -79,8 +84,8 @@ export class LevelBuilder {
   }
 }
 
-export function buildLevel(params: LevelParams): Level {
-  const b = new LevelBuilder(params);
+export function buildLevel(params: LevelParams, cfg: BikeConfig = defaultConfig): Level {
+  const b = new LevelBuilder(params, cfg);
   let level: Level | null = null;
   while (!level) level = b.run(200000);
   return level;

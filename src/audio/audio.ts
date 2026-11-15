@@ -14,6 +14,10 @@ function clamp(v: number, lo: number, hi: number): number {
 export class GameAudio {
   ctx: BaseAudioContext | null = null;
   muted = false;
+  /** 0..1 overall loudness. */
+  volume = 1;
+  /** Pain screams and bone cracks. */
+  screams = true;
 
   private master!: GainNode;
   private noise!: AudioBuffer;
@@ -47,8 +51,27 @@ export class GameAudio {
   }
 
   toggleMute(): void {
-    this.muted = !this.muted;
-    if (this.ctx) this.master.gain.setTargetAtTime(this.muted ? 0 : 0.55, this.ctx.currentTime, 0.02);
+    this.setLevel(!this.muted, this.volume);
+  }
+
+  /** Mute or unmute, and set the overall loudness (0..1). */
+  setLevel(muted: boolean, volume: number): void {
+    this.muted = muted;
+    this.volume = volume;
+    if (this.ctx) this.master.gain.setTargetAtTime(this.level(), this.ctx.currentTime, 0.02);
+  }
+
+  private level(): number {
+    return this.muted ? 0 : 0.55 * this.volume;
+  }
+
+  /** A short rising chime, for an earned achievement. */
+  chime(): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    const notes = [783.99, 1046.5, 1318.5];
+    for (let i = 0; i < notes.length; i++) this.tone(t + i * 0.07, 0.35, "sine", notes[i]!, notes[i]!, 0.16);
   }
 
   /** Build the sound graph on a context (a live one, or an offline one for testing). */
@@ -59,7 +82,7 @@ export class GameAudio {
     comp.ratio.value = 6;
     comp.connect(ctx.destination);
     this.master = ctx.createGain();
-    this.master.gain.value = this.muted ? 0 : 0.55;
+    this.master.gain.value = this.level();
     this.master.connect(comp);
 
     this.noise = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
@@ -144,6 +167,15 @@ export class GameAudio {
     this.engNoiseGain.gain.setTargetAtTime((0.012 + 0.04 * load * rpm) * level, t, 0.03);
   }
 
+  /** Fade out the engine, skid and wind (menus, pause). */
+  quiet(): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    this.setEngine(IDLE, 0, 0);
+    this.skidGain.gain.setTargetAtTime(0, ctx.currentTime, 0.04);
+    this.windGain.gain.setTargetAtTime(0, ctx.currentTime, 0.04);
+  }
+
   reset(): void {
     this.rpm = IDLE;
     this.gear = 0;
@@ -204,16 +236,18 @@ export class GameAudio {
       this.burst(t, 0.07 + 0.05 * k, "bandpass", 2100, 3, 0.16 * k); // tire chirp
     } else if (e.type === "headScrape") {
       this.burst(t, 0.12, "bandpass", 3200, 1.2, 0.2); // helmet on the ground
-      if (e.speed > 0.6) this.voice(t + 0.02, 0.22, 420, 300, 0.35); // yelp
+      if (e.speed > 0.6 && this.screams) this.voice(t + 0.02, 0.22, 420, 300, 0.35); // yelp
     } else if (e.type === "fenderBreak") {
       // plastic snap
       this.burst(t, 0.03, "highpass", 2400, 0.7, 0.55);
       this.burst(t + 0.012, 0.09, "bandpass", 900, 1.5, 0.35);
     } else if (e.type === "crash") {
       this.tone(t, 0.22, "sine", 90, 35, 0.8); // body thud
-      this.crack(t);
-      if (e.cause === CAUSE_NECK) this.voice(t + 0.05, 0.75, 520, 260, 0.5);
-      else this.voice(t + 0.03, 0.32, 330, 150, 0.5);
+      if (this.screams) {
+        this.crack(t);
+        if (e.cause === CAUSE_NECK) this.voice(t + 0.05, 0.75, 520, 260, 0.5);
+        else this.voice(t + 0.03, 0.32, 330, 150, 0.5);
+      }
     } else if (e.type === "finish") {
       const notes = [523.25, 659.25, 783.99, 1046.5];
       for (let i = 0; i < notes.length; i++) this.tone(t + i * 0.09, 0.5, "triangle", notes[i]!, notes[i]!, 0.18);
