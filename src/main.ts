@@ -243,7 +243,7 @@ function useLevel(l: Level): void {
   renderer.startHint = spec.race
     ? `Beat ${runs?.length === 1 ? "the AI rider" : `all ${runs?.length ?? 0} AI riders`}. They start when you do.`
     : "↑ throttle   ↓ brake   ← lean back   → lean forward";
-  renderer.crashHint = save.options.autoRestart ? "" : "R to try again";
+  renderer.crashHint = "R, Space or Enter to try again";
   renderer.keysLabel = "R restart     Esc pause     M sound";
   effects.clear();
   planAhead(spec);
@@ -413,7 +413,9 @@ keyboard.onRestart = () => {
 };
 keyboard.onKey = (code) => {
   if (screen !== "playing") return;
-  if (code === "KeyM") {
+  // after a crash Space and Enter restart too; during a live run only R does
+  if ((code === "Space" || code === "Enter") && game.mode === "play" && game.state.status === CRASHED) beginRun();
+  else if (code === "KeyM") {
     save.options.sound = !save.options.sound;
     host.persist();
   } else if (code === "Escape" || code === "KeyP") {

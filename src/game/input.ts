@@ -26,7 +26,7 @@ export class Keyboard {
       if (bit !== undefined) {
         this.mask |= bit;
         e.preventDefault();
-      } else if ((e.code === "KeyR" || e.code === "Enter" || e.code === "Space") && !e.repeat) {
+      } else if (e.code === "KeyR" && !e.repeat) {
         this.onRestart();
         e.preventDefault();
       } else if (!e.repeat && !e.metaKey && !e.ctrlKey) {
