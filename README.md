@@ -35,9 +35,13 @@ Menus work with the arrow keys, Enter or Space, and Esc to go back.
 - **Standard**: 100 levels of rising difficulty. Past level 20, holding the throttle is no longer enough.
 - **Planets**: the Moon, Mars and Mercury. Lighter gravity, huge slow jumps, tracks twice as long.
 - **Super-Earths**: 2×, 3×, 5× and 10× gravity. Short jumps and brutal landings.
-- **Race against AI**: easy (1 rider), medium (3) and hard (10). The AI riders see one screen ahead, like you, and have never seen the track.
+- **Race against AI**: easy (1 rider), medium (3), hard (10) and impossible (10 riders flat out on brutal tracks, each the fastest of three tries). The AI riders see one screen ahead, like you, and have never seen the track.
+- **Impossible**: tracks at the edge of what the bike can do, never checked by the solver.
+  - *Climb*: 10 levels of faces steeper than the engine can hold. Fall short, roll back, take a longer run-up. Each wall's height is measured against a climbing bot as it is built; the last level sits at (or past) its limit.
+  - *Descent*: 10 levels of chutes, cliffs and rock gardens. Keep it level and ride the brakes.
+  - *Campaign*: no last level. Each one you beat opens a slightly harder, longer one.
 - **Custom track**: pick the difficulty, length (150–2000 m) and world.
-- **Achievements**: 25 of them. You only see the ones you've earned.
+- **Achievements**: 30 of them. You only see the ones you've earned.
 - **Options**: blood, sound, screams, volume, ghost of your best run, camera shake, auto-restart.
 
 Progress, records and options are saved in your browser's local storage. There are no accounts and nothing leaves your machine.
@@ -101,7 +105,7 @@ Upload `dist/` to any static host. For Vercel, the included `vercel.json` does t
 | Path | What it holds |
 | --- | --- |
 | `src/sim/` | The physics: config, state, the tick function, track collision |
-| `src/level/` | Track generator, solver, and the verified-level builder |
+| `src/level/` | Track generators (standard and impossible), solver, and the verified-level builder |
 | `src/game/` | Game loop, input, replays, ragdoll |
 | `src/render/` | Canvas renderer, particle effects, world themes |
 | `src/audio/` | Synthesised engine, tires, impacts and voice (Web Audio) |

@@ -1,6 +1,6 @@
 // Menus: plain DOM laid over the game canvas. Arrow keys move, Enter picks, Esc goes back.
 import { ACHIEVEMENTS, iconSvg, type Achievement } from "../app/achievements";
-import { CUSTOM_LENGTH, customLevel, ladderById, ladderLevel, type Ladder, type LevelSpec } from "../app/modes";
+import { CUSTOM_LENGTH, customLevel, ladderById, ladderLevel, RACE_TIERS, type Ladder, type LevelSpec } from "../app/modes";
 import { PLANETS } from "../app/planets";
 import { OPPONENTS } from "../app/race";
 import { cleanName, NAME_MAX, randomName, type Options, type SaveData } from "../app/save";
@@ -168,7 +168,8 @@ export class Menu {
       button("Standard", `${done("standard")} of ${std.count} levels`, () => this.showLevels(std, () => this.showMain())),
       button("Planets", "Moon · Mars · Mercury", () => this.showWorlds("light")),
       button("Super-Earths", "2× · 3× · 5× · 10× gravity", () => this.showWorlds("heavy")),
-      button("Race against AI", "easy · medium · hard", () => this.showRaces()),
+      button("Race against AI", "easy · medium · hard · impossible", () => this.showRaces()),
+      button("Impossible", "climb · descent · campaign", () => this.showImpossible()),
       button("Custom track", "pick difficulty, length and world", () => this.showCustom()),
     );
     if (earned > 0) list.append(button("Achievements", `${earned} earned`, () => this.showAchievements()));
@@ -187,7 +188,9 @@ export class Menu {
     const grid = el("div", "grid");
     let focus: HTMLElement | null = null;
     const word = ladder.race ? "Race" : "Level";
-    for (let n = 1; n <= ladder.count; n++) {
+    // an endless ladder shows what has been opened so far
+    const shown = ladder.endless ? Math.min(ladder.count, done + (dev ? 10 : 1)) : ladder.count;
+    for (let n = 1; n <= shown; n++) {
       const spec = ladderLevel(save.name, ladder, n);
       const tile = el("button", "tile", String(n));
       tile.type = "button";
@@ -211,7 +214,9 @@ export class Menu {
     }
     const sub = ladder.race
       ? `${done} of ${ladder.count} won. Win a race to unlock the next one.`
-      : `${done} of ${ladder.count} finished. Finish a level to unlock the next one.`;
+      : ladder.endless
+        ? `${done} beaten. There is no last level: each one you beat opens the next, a little harder.`
+        : `${done} of ${ladder.count} finished. Finish a level to unlock the next one.`;
     const panel = el("div", "panel wide", el("h2", "", ladder.title), el("p", "sub", sub), grid, info, button("Back", "Esc", back, "back"));
     this.show(panel, back, focus ?? grid.querySelector<HTMLElement>("button:not(:disabled)"));
   }
@@ -258,9 +263,10 @@ export class Menu {
       easy: "One AI rider, held back to a gentle pace.",
       medium: "Three AI riders at a brisk pace.",
       hard: "Ten AI riders, the best of them flat out.",
+      impossible: "Ten AI riders flat out on brutal tracks, each the best of three tries.",
     };
     const cards = el("div", "cards");
-    for (const tier of ["easy", "medium", "hard"] as const) {
+    for (const tier of RACE_TIERS) {
       const ladder = ladderById(`race-${tier}`)!;
       const card = el(
         "button",
@@ -275,6 +281,34 @@ export class Menu {
     }
     const sub = "The AI sees one screen ahead, like you, and has never seen the track. It starts when you do. Finish first to win.";
     this.show(el("div", "panel wide", el("h2", "", "Race against AI"), el("p", "sub", sub), cards, button("Back", "Esc", back, "back")), back);
+  }
+
+  // ---- impossible ----
+
+  private showImpossible(): void {
+    const { save } = this.host;
+    const back = () => this.showMain();
+    const again = () => this.showImpossible();
+    const modes = [
+      { id: "impossible-climb", name: "Climb", blurb: "Up faces steeper than the engine can hold. Fall short, roll back, take a longer run, go again." },
+      { id: "impossible-descent", name: "Descent", blurb: "Down cliffs, chutes and rock gardens. Keep it level and ride the brakes." },
+      { id: "impossible-campaign", name: "Campaign", blurb: "No last level. Each one you beat opens a harder one. Grind." },
+    ];
+    const cards = el("div", "cards");
+    for (const m of modes) {
+      const ladder = ladderById(m.id)!;
+      const done = save.progress[ladder.id] ?? 0;
+      const t = themeById(ladderLevel(save.name, ladder, done + 1).theme);
+      const swatch = el("div", "swatch");
+      swatch.style.background = `linear-gradient(180deg, ${t.skyTop}, ${t.skyMid} 45%, ${t.skyBottom} 62%, ${t.hillMid} 63%, ${t.groundTop})`;
+      const prog = ladder.endless ? `${done} beaten` : `${done} of ${ladder.count} levels`;
+      const card = el("button", "item card", swatch, el("span", "name", m.name), el("span", "blurb", m.blurb), el("span", "prog", prog));
+      card.type = "button";
+      card.addEventListener("click", () => this.showLevels(ladder, again));
+      cards.append(card);
+    }
+    const sub = "Tracks at the very edge of what the bike can do. Nothing here is checked by the solver; the last levels may well be impossible.";
+    this.show(el("div", "panel wide", el("h2", "", "Impossible"), el("p", "sub", sub), cards, button("Back", "Esc", back, "back")), back);
   }
 
   // ---- custom track ----

@@ -44,6 +44,17 @@ export class TrackBuilder {
     return this.smooth(len / 2, height).smooth(len / 2, -height);
   }
 
+  /** Curve whose slope (dy/dx) changes evenly from `from` to `to` over `len` meters: a transition into or out of a steep face. */
+  bend(len: number, from: number, to: number): this {
+    const steps = Math.max(2, Math.ceil(len / this.sample));
+    const dx = len / steps;
+    for (let i = 0; i < steps; i++) {
+      const k = from + ((to - from) * (i + 0.5)) / steps;
+      this.add(dx, k * dx);
+    }
+    return this;
+  }
+
   /** Near-vertical step up or down. */
   step(dy: number): this {
     return this.add(0.05, dy);

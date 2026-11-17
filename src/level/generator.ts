@@ -2,6 +2,7 @@
 // on any JS engine: only integer math and + - * / are used (no trig, no Math.random).
 import type { Track } from "../sim/track";
 import { TrackBuilder } from "./builder";
+import { generateImpossible } from "./impossible";
 
 export interface LevelParams {
   seed: number;
@@ -13,7 +14,11 @@ export interface LevelParams {
   attempt?: number;
   /** Multiplier on how wide jumps are: below 1 for heavy gravity (short jumps), above 1 for light. Default 1. */
   gapScale?: number;
+  /** Which generator: the standard mixed terrain (default), or one of the impossible modes. */
+  kind?: TrackKind;
 }
+
+export type TrackKind = "standard" | "climb" | "descent" | "campaign";
 
 /** mulberry32: small, fast, well-distributed 32-bit PRNG. Returns values in [0, 1). */
 export function makeRng(seed: number): () => number {
@@ -28,7 +33,7 @@ export function makeRng(seed: number): () => number {
 }
 
 type Net = "up" | "down" | "level";
-type Rnd = (lo: number, hi: number) => number;
+export type Rnd = (lo: number, hi: number) => number;
 /** Set for the duration of one generateTrack call. */
 let gapScale = 1;
 
@@ -252,6 +257,7 @@ const START_FLAT = 18;
 const END_FLAT = 30;
 
 export function generateTrack(p: LevelParams): Track {
+  if (p.kind && p.kind !== "standard") return generateImpossible(p, p.kind);
   // each attempt for a seed is its own independent random stream
   const rng = makeRng((p.seed ^ Math.imul(p.attempt ?? 0, 0x9e3779b9)) >>> 0);
   const rnd: Rnd = (lo, hi) => lo + (hi - lo) * rng();
@@ -267,20 +273,7 @@ export function generateTrack(p: LevelParams): Track {
   while (b.x < p.length) {
     // Levels start a little easier than their rating and end at it.
     const d = difficulty * (0.75 + 0.25 * Math.min(1, b.x / p.length));
-
-    let total = 0;
-    for (const f of FEATURES) total += allowed(f, b.y) ? f.weight(d) : 0;
-    let pick = rng() * total;
-    let chosen = FEATURES[0]!;
-    for (const f of FEATURES) {
-      if (!allowed(f, b.y)) continue;
-      const w = f.weight(d);
-      if (w <= 0) continue;
-      chosen = f;
-      pick -= w;
-      if (pick < 0) break;
-    }
-    chosen.build(b, d, rnd);
+    standardFeature(b, d, rng, rnd, !(b.y > MAX_DRIFT), !(b.y < -MAX_DRIFT));
     // breathing room between features shrinks to almost nothing at the top
     b.flat(mix(9, 0.8, d) + rnd(0, mix(4, 1.5, d)));
   }
@@ -297,8 +290,25 @@ export function generateTrack(p: LevelParams): Track {
   return b.build(6, 14);
 }
 
-function allowed(f: Feature, y: number): boolean {
-  if (y > MAX_DRIFT && f.net === "up") return false;
-  if (y < -MAX_DRIFT && f.net === "down") return false;
-  return true;
+/** Pick and build one standard piece at difficulty `d`, leaving out pieces that climb or fall when not allowed. */
+export function standardFeature(b: TrackBuilder, d: number, rng: () => number, rnd: Rnd, up: boolean, down: boolean): void {
+  const allowed = (f: Feature) => (up || f.net !== "up") && (down || f.net !== "down");
+  let total = 0;
+  for (const f of FEATURES) total += allowed(f) ? f.weight(d) : 0;
+  let pick = rng() * total;
+  let chosen = FEATURES[0]!;
+  for (const f of FEATURES) {
+    if (!allowed(f)) continue;
+    const w = f.weight(d);
+    if (w <= 0) continue;
+    chosen = f;
+    pick -= w;
+    if (pick < 0) break;
+  }
+  chosen.build(b, d, rnd);
+}
+
+/** Standard pieces size jumps by this; the impossible generators set it too. */
+export function setGapScale(s: number): void {
+  gapScale = s;
 }

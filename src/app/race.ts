@@ -13,6 +13,8 @@ import type { RaceTier } from "./modes";
 interface Opponent {
   variant: number;
   maxSpeed: number;
+  /** Ride this many variations of the rider and keep the fastest (default 1). */
+  bestOf?: number;
 }
 
 const FULL = Infinity;
@@ -35,6 +37,8 @@ export const OPPONENTS: Record<RaceTier, Opponent[]> = {
     { variant: 8, maxSpeed: 21 },
     { variant: 9, maxSpeed: 20 },
   ],
+  // Ten riders flat out, each the fastest of a few slightly different riders on this very track.
+  impossible: Array.from({ length: 10 }, (_, i) => ({ variant: i, maxSpeed: FULL, bestOf: 3 })),
 };
 const VARIANT_SIGMA = 0.04;
 
@@ -50,25 +54,37 @@ export interface RaceLevel extends Level {
   runs: RaceRun[];
 }
 
-function ride(track: Track, cfg: BikeConfig, rider: Float64Array, tier: RaceTier): RaceRun[] {
-  const runs = OPPONENTS[tier].map((o) => {
-    const theta = o.variant === 0 ? rider : variantRider(rider, 1000 + o.variant, VARIANT_SIGMA);
-    const r = runEpisode(track, cfg, theta, true, o.maxSpeed);
-    return { inputs: r.inputs!, finished: r.finished, ticks: r.ticks };
-  });
-  return runs.sort((a, b) => Number(b.finished) - Number(a.finished) || a.ticks - b.ticks);
+function riderFor(rider: Float64Array, variant: number): Float64Array {
+  return variant === 0 ? rider : variantRider(rider, 1000 + variant, VARIANT_SIGMA);
 }
+
+/** One opponent's run: the fastest finish among its tries, or else the one that got furthest. */
+function rideOne(track: Track, cfg: BikeConfig, rider: Float64Array, o: Opponent): RaceRun {
+  let best: (RaceRun & { progress: number }) | null = null;
+  for (let k = 0; k < (o.bestOf ?? 1); k++) {
+    const r = runEpisode(track, cfg, riderFor(rider, o.variant + 100 * k), true, o.maxSpeed);
+    const better = !best || (r.finished && (!best.finished || r.ticks < best.ticks)) || (!r.finished && !best.finished && r.progress > best.progress);
+    if (better) best = { inputs: r.inputs!, finished: r.finished, ticks: r.ticks, progress: r.progress };
+  }
+  return { inputs: best!.inputs, finished: best!.finished, ticks: best!.ticks };
+}
+
+const sortRuns = (runs: RaceRun[]) => runs.sort((a, b) => Number(b.finished) - Number(a.finished) || a.ticks - b.ticks);
 
 const MAX_TRIES = 12;
 
 /**
- * Finds a track for a race, a candidate per call so the page stays responsive. A track is accepted
- * when at least half the opponents finish it, which also proves a human can.
+ * Finds a track for a race, one opponent ride per call so the page stays responsive. A track is
+ * accepted when at least half the opponents finish it (three on impossible), which also proves a human can.
  */
 export class RaceBuilder {
   attempt = 0;
   level: RaceLevel | null = null;
   private best: { attempt: number; finishers: number } = { attempt: 0, finishers: -1 };
+  private track: Track | null = null;
+  private runs: RaceRun[] = [];
+  /** Riding the best attempt again after nothing was good enough. */
+  private fallback = false;
 
   constructor(
     private params: LevelParams,
@@ -83,16 +99,26 @@ export class RaceBuilder {
 
   run(): RaceLevel | null {
     if (this.level) return this.level;
-    const need = Math.ceil(OPPONENTS[this.tier].length / 2);
-    const track = generateTrack({ ...this.params, attempt: this.attempt });
-    const runs = ride(track, this.cfg, this.rider, this.tier);
+    const field = OPPONENTS[this.tier];
+    if (!this.track) {
+      this.track = generateTrack({ ...this.params, attempt: this.attempt });
+      this.runs = [];
+    }
+    this.runs.push(rideOne(this.track, this.cfg, this.rider, field[this.runs.length]!));
+    if (this.runs.length < field.length) return null;
+
+    const runs = sortRuns(this.runs);
     const finishers = runs.filter((r) => r.finished).length;
-    if (finishers >= need) return (this.level = this.make(track, this.attempt, runs, true));
+    if (this.fallback) return (this.level = this.make(this.track, this.attempt, runs, finishers > 0));
+    const need = this.tier === "impossible" ? 3 : Math.ceil(field.length / 2);
+    if (finishers >= need) return (this.level = this.make(this.track, this.attempt, runs, true));
     if (finishers > this.best.finishers) this.best = { attempt: this.attempt, finishers };
+    this.track = null;
     if (++this.attempt < MAX_TRIES) return null;
-    // nothing good enough: use the track most opponents finished
-    const fallback = generateTrack({ ...this.params, attempt: this.best.attempt });
-    return (this.level = this.make(fallback, this.best.attempt, ride(fallback, this.cfg, this.rider, this.tier), this.best.finishers > 0));
+    // nothing good enough: ride again the track most opponents finished
+    this.attempt = this.best.attempt;
+    this.fallback = true;
+    return null;
   }
 
   private make(track: Track, attempt: number, runs: RaceRun[], verified: boolean): RaceLevel {

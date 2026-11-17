@@ -201,7 +201,7 @@ function startLevel(s: LevelSpec): void {
   setScreen("loading");
   save.lastLadder = s.ladder;
   storeSave(save);
-  setWorld(s.planet.theme);
+  setWorld(s.theme);
   renderer.levelLabel = s.title;
   renderer.hudLines = [];
   renderer.busyText = "getting ready…";
@@ -212,6 +212,11 @@ function startLevel(s: LevelSpec): void {
   effects.clear();
 
   const cfg = bikeFor(s);
+  // impossible modes: ridden exactly as generated, which takes no time
+  if (!s.verify && !s.race) {
+    useLevel({ track: generateTrack(s.params), attempt: 0, verified: false, solution: null, solutionTicks: 0, failures: 0 });
+    return;
+  }
   if (s.race) {
     builder = rider ? new RaceBuilder(s.params, cfg, rider, s.race) : new LevelBuilder(s.params, cfg);
     return;
@@ -254,7 +259,7 @@ let ahead: { spec: LevelSpec; builder: LevelBuilder } | null = null;
 function planAhead(s: LevelSpec): void {
   ahead = null;
   const ladder = ladderById(s.ladder);
-  if (DEV || !ladder || ladder.race || s.index >= ladder.count) return;
+  if (DEV || !ladder || ladder.race || ladder.unchecked || s.index >= ladder.count) return;
   const next = ladderLevel(save.name, ladder, s.index + 1);
   try {
     if (localStorage.getItem(levelKey(next))) return;
@@ -311,7 +316,7 @@ function useLevel(l: Level): void {
   game.rivals = runs ? runs.map((r) => ({ trackId: game.trackId, cfg, inputs: r.inputs, ticks: r.ticks, hash: 0 })) : [];
   solution = l.solution ? { trackId: game.trackId, cfg, inputs: l.solution, ticks: l.solutionTicks, hash: 0 } : null;
   renderer.busyText = "";
-  renderer.levelLabel = l.verified ? spec.title : `${spec.title} · could not be proven passable`;
+  renderer.levelLabel = l.verified || !spec.verify ? spec.title : `${spec.title} · could not be proven passable`;
   setHints();
   effects.clear();
   planAhead(spec);

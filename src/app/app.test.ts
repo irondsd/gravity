@@ -2,10 +2,13 @@ import { describe, expect, test } from "bun:test";
 import riderFile from "../../data/rider.json";
 import { loadRider, type RiderFile } from "../ai/policy";
 import { generateTrack } from "../level/generator";
+import { reach } from "../level/impossible";
+import { TrackBuilder } from "../level/builder";
+import { trackHash } from "../game/replay";
 import { buildLevel } from "../level/level";
 import { createState, defaultConfig, FINISHED, IN_LEAN_BACK, IN_THROTTLE, RUNNING, tick } from "../sim";
 import { ACHIEVEMENTS, finishAchievements, iconSvg, RunTracker, type FinishInfo } from "./achievements";
-import { customLevel, LADDERS, ladderById, ladderLevel } from "./modes";
+import { campaignDifficulty, customLevel, LADDERS, ladderById, ladderLevel } from "./modes";
 import { planetConfig, planetGapScale, PLANETS } from "./planets";
 import { OPPONENTS, RaceBuilder, racePlace } from "./race";
 import { cleanName, hashText, newSave, parseSave, randomName } from "./save";
@@ -105,7 +108,7 @@ describe("modes", () => {
       expect(first.cfg.gravity).toBeCloseTo(defaultConfig.gravity * p.g, 9);
       if (p.group === "light") expect(first.params.length).toBeGreaterThanOrEqual(500);
     }
-    expect(LADDERS.filter((l) => l.race).map((l) => l.id)).toEqual(["race-easy", "race-medium", "race-hard"]);
+    expect(LADDERS.filter((l) => l.race).map((l) => l.id)).toEqual(["race-easy", "race-medium", "race-hard", "race-impossible"]);
   });
 
   test("level numbers outside a ladder are clamped", () => {
@@ -281,6 +284,10 @@ describe("achievements", () => {
       { ladder: "race-easy", place: 1, marginTicks: 1 },
       { ladder: "race-medium", place: 1 },
       { ladder: "race-hard", place: 1 },
+      { ladder: "race-impossible", place: 1 },
+      { ladder: "impossible-climb", index: 10 },
+      { ladder: "impossible-descent", index: 10 },
+      { ladder: "impossible-campaign", index: 25 },
       { planets: PLANETS.map((p) => p.id) },
       { ladder: "custom", length: 2000, difficulty: 1 },
       { headScraped: true, fenderBroken: true, streak: 5 },
@@ -363,5 +370,101 @@ describe("achievements", () => {
     }
     // whatever the controller managed, the tracker must agree with a direct count
     expect(seen.has("wheelie")).toBe(best >= 5 * 120);
+  });
+});
+
+describe("impossible modes", () => {
+  const climb = ladderById("impossible-climb")!;
+  const descent = ladderById("impossible-descent")!;
+  const campaign = ladderById("impossible-campaign")!;
+  const extent = (n: number, ys: Float64Array) => {
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (let i = 1; i < n - 1; i++) {
+      lo = Math.min(lo, ys[i]!);
+      hi = Math.max(hi, ys[i]!);
+    }
+    return { lo, hi };
+  };
+
+  test("climb and descent are ten levels each, from easy to the edge; none is checked by the solver", () => {
+    for (const l of [climb, descent]) {
+      expect(l.count).toBe(10);
+      expect(ladderLevel("Rider", l, 1).params.difficulty).toBe(0);
+      expect(ladderLevel("Rider", l, 10).params.difficulty).toBe(1);
+      expect(ladderLevel("Rider", l, 5).verify).toBe(false);
+      expect(ladderLevel("Rider", l, 5).cfg).toEqual(defaultConfig);
+      expect(THEMES[ladderLevel("Rider", l, 5).theme]).toBeDefined();
+    }
+    expect(ladderLevel("Rider", ladderById("standard")!, 5).verify).toBe(true);
+  });
+
+  test("climbs go up and descents go down, further on harder levels", () => {
+    const c1 = ladderLevel("Rider", climb, 1);
+    const c10 = ladderLevel("Rider", climb, 10);
+    const t1 = generateTrack(c1.params);
+    const t10 = generateTrack(c10.params);
+    expect(t1.ys[t1.n - 1]!).toBeGreaterThan(10);
+    expect(t10.ys[t10.n - 1]!).toBeGreaterThan(t1.ys[t1.n - 1]!);
+    const d1 = generateTrack(ladderLevel("Rider", descent, 1).params);
+    const d10 = generateTrack(ladderLevel("Rider", descent, 10).params);
+    expect(d1.ys[d1.n - 1]!).toBeLessThan(-10);
+    expect(d10.ys[d10.n - 1]!).toBeLessThan(d1.ys[d1.n - 1]!);
+    expect(extent(d10.n, d10.ys).hi).toBeLessThan(5);
+  });
+
+  test("impossible tracks are the same every time, and differ by name and level", () => {
+    for (const l of [climb, descent, campaign]) {
+      const a = ladderLevel("Rider", l, 7);
+      expect(trackHash(generateTrack(a.params))).toBe(trackHash(generateTrack(a.params)));
+      expect(trackHash(generateTrack(ladderLevel("Other", l, 7).params))).not.toBe(trackHash(generateTrack(a.params)));
+    }
+  });
+
+  test("a wall the engine cannot hold stops the climbing bot partway; a longer run-up gets it higher", () => {
+    const face = (run: number) => {
+      const b = new TrackBuilder();
+      b.flat(3 + run).bend(4, 0, 2).slope(30, 60).bend(3, 2, 0).flat(20);
+      return b.build(2, 1);
+    };
+    const short = reach(face(3), 0);
+    const long = reach(face(40), 0);
+    expect(short).toBeGreaterThan(3);
+    expect(short).toBeLessThan(40);
+    expect(long).toBeGreaterThan(short + 2);
+  });
+
+  test("the campaign never ends and keeps getting harder and longer", () => {
+    expect(campaign.endless).toBe(true);
+    let prev = 0;
+    for (let n = 1; n <= 200; n++) {
+      const d = campaignDifficulty(n);
+      expect(d).toBeGreaterThan(prev);
+      expect(d).toBeLessThan(0.9);
+      prev = d;
+    }
+    expect(campaignDifficulty(1)).toBeCloseTo(0.15, 5);
+    const a = ladderLevel("Rider", campaign, 1);
+    const b = ladderLevel("Rider", campaign, 60);
+    expect(b.params.length).toBeGreaterThan(a.params.length);
+    expect(b.index).toBe(60);
+    // the look changes every five levels
+    expect(ladderLevel("Rider", campaign, 5).theme).toBe(a.theme);
+    expect(ladderLevel("Rider", campaign, 6).theme).not.toBe(a.theme);
+  });
+
+  test("an impossible race fields ten riders, each the best of three", () => {
+    expect(OPPONENTS.impossible.length).toBe(10);
+    const l = ladderById("race-impossible")!;
+    expect(ladderLevel("Rider", l, 1).params.difficulty).toBeGreaterThan(ladderLevel("Rider", ladderById("race-hard")!, 10).params.difficulty - 0.11);
+  });
+
+  test("finishing the last climb, the last descent, and deep campaign levels earns achievements", () => {
+    const base: FinishInfo = { ladder: "impossible-climb", index: 10, difficulty: 1, length: 330, ticks: 9000, failsBefore: 0, previousBest: 1, place: null, marginTicks: null, headScraped: false, fenderBroken: false, standardDone: 0, streak: 0, planets: [] };
+    expect(finishAchievements(base)).toEqual(["summit"]);
+    expect(finishAchievements({ ...base, index: 9 })).toEqual([]);
+    expect(finishAchievements({ ...base, ladder: "impossible-descent" })).toEqual(["freefall"]);
+    expect(finishAchievements({ ...base, ladder: "impossible-campaign", index: 25 })).toEqual(["grinder", "relentless"]);
+    expect(finishAchievements({ ...base, ladder: "race-impossible", place: 1, marginTicks: 400 })).toEqual(["ai-impossible"]);
   });
 });

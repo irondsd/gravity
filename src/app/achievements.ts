@@ -37,6 +37,11 @@ export const ACHIEVEMENTS: Achievement[] = [
   { id: "ai-easy", title: "Beat the rookie", text: "Win a race against the AI on easy.", color: "#4c9a6a", icon: robot },
   { id: "ai-medium", title: "Beat the pack", text: "Win a race against the AI on medium.", color: "#c98a2b", icon: robot + `<path d="M9 37h30" ${W}/>` },
   { id: "ai-hard", title: "Beat the swarm", text: "Win a race against ten AI riders on hard.", color: "#c9413d", icon: robot + `<path d="M9 37h30M11 12l4 3M37 12l-4 3" ${W}/>` },
+  { id: "ai-impossible", title: "Beat the machine", text: "Win a race against the AI on impossible.", color: "#6d2f9e", icon: robot + `<path d="M9 37h30M11 12l4 3M37 12l-4 3M24 6v3" ${W}/>` },
+  { id: "summit", title: "Summit", text: "Finish the last impossible climb.", color: "#4f7fb0", icon: `<path d="M6 37l12-20 6 9 5-6 13 17z" ${W}/><path d="M18 17V8l6 3-6 3" ${F}/>` },
+  { id: "freefall", title: "Gravity always wins", text: "Finish the last impossible descent.", color: "#b5532f", icon: `<path d="M10 10h10v10h8v10h10" ${W}/><path d="M24 30v8M20 34l4 4 4-4" ${W}/>` },
+  { id: "grinder", title: "Grinder", text: "Beat 10 levels of the impossible campaign.", color: "#8a2f45", icon: `<circle cx="24" cy="24" r="12" ${W}/><path d="M24 8v6M24 34v6M8 24h6M34 24h6M13 13l4 4M31 31l4 4M13 35l4-4M31 17l4-4" ${W}/>` },
+  { id: "relentless", title: "Relentless", text: "Beat 25 levels of the impossible campaign.", color: "#5a1830", icon: `<circle cx="24" cy="24" r="12" ${W}/><circle cx="24" cy="24" r="4" ${F}/><path d="M24 8v6M24 34v6M8 24h6M34 24h6M13 13l4 4M31 31l4 4M13 35l4-4M31 17l4-4" ${W}/>` },
   { id: "photo", title: "Photo finish", text: "Beat the AI by less than half a second.", color: "#5a6fd0", icon: `<rect x="10" y="17" width="28" height="19" rx="3" ${W}/><circle cx="24" cy="26" r="5" ${W}/><path d="M18 17l2-4h8l2 4" ${W}/>` },
   { id: "tourist", title: "Space tourist", text: "Finish a level on the Moon, Mars and Mercury.", color: "#6b6f8a", icon: `<circle cx="24" cy="24" r="8" ${W}/><ellipse cx="24" cy="24" rx="16" ry="5" transform="rotate(-20 24 24)" ${W}/>` },
   { id: "heavy", title: "Heavyweight", text: "Finish a level on every super-earth.", color: "#2f6b45", icon: `<path d="M14 36l3-17h14l3 17zM20 19a4 4 0 0 1 8 0" ${W}/><path d="M20 29h8" ${W}/>` },
@@ -171,5 +176,9 @@ export function finishAchievements(f: FinishInfo): string[] {
   if (f.fenderBroken) out.push("fender");
   if (f.streak >= 5) out.push("streak");
   if (f.ladder === "custom" && f.difficulty >= 1) out.push("extreme");
+  if (f.ladder === "impossible-climb" && f.index >= 10) out.push("summit");
+  if (f.ladder === "impossible-descent" && f.index >= 10) out.push("freefall");
+  if (f.ladder === "impossible-campaign" && f.index >= 10) out.push("grinder");
+  if (f.ladder === "impossible-campaign" && f.index >= 25) out.push("relentless");
   return out;
 }
